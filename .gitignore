@@ -5,3 +5,4 @@ random
 data
 *.pyc
 __pycache__
+_runs

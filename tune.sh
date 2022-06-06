@@ -1,6 +1,15 @@
 #/bin/bash
 
-set -x
+# set -x
+
+if git diff-index --quiet HEAD; then
+  mkdir _runs/`git rev-parse HEAD`
+  exit;
+else
+  echo "Working directory is not clean, submit the changes then do the training";
+  # branch_name=$(cat /proc/sys/kernel/random/uuid | sed 's/[-]//g' | head -c 8)
+  exit;
+fi
 
 if [ $machine_name = "main" ];then
   echo "in main"
@@ -65,7 +74,7 @@ if [ $machine_name = "A6000_1" ];then
 
   CELL_TOKEN_SIZE=( 64 128 192 )
   CONTEXT_STRIDE=( 1 2 3 )
-  context_cells_token_size=( 14 28 )
+  CONTEXT_CELLS_TOKEN_SIZE=( 14 28 )
 
   for cell_token_size in "${CELL_TOKEN_SIZE[@]}"; do
     for context_stride in "${CONTEXT_STRIDE[@]}"; do

@@ -72,7 +72,7 @@ def main(
         )
 
     data: Dict[str, datasets.Sample] = pickle.load(
-        open(f"./data/10fold{'_mini' if testing else ''}.v1.pkl", "rb")
+        open(f"/home/featurize/ai4code/data/10fold{'_mini' if testing else ''}.v1.pkl", "rb")
     )
 
     val_data = {k: v for k, v in list(data.items()) if v.fold in val_folds}
