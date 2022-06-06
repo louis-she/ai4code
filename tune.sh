@@ -2,13 +2,15 @@
 
 # set -x
 
+RUN_DIR="/home/featurize/work/ai4code/_runs/"`git rev-parse HEAD`
+
 if git diff-index --quiet HEAD; then
-  mkdir _runs/`git rev-parse HEAD`
-  exit;
+  if [ ! -d RUN_DIR ]; then
+    git clone /home/featurize/work/ai4code $RUN_DIR
+  fi
 else
   echo "Working directory is not clean, submit the changes then do the training";
-  # branch_name=$(cat /proc/sys/kernel/random/uuid | sed 's/[-]//g' | head -c 8)
-  exit;
+  exit
 fi
 
 if [ $machine_name = "main" ];then
@@ -79,7 +81,7 @@ if [ $machine_name = "A6000_1" ];then
   for cell_token_size in "${CELL_TOKEN_SIZE[@]}"; do
     for context_stride in "${CONTEXT_STRIDE[@]}"; do
       for context_cells_token_size in "${CONTEXT_CELLS_TOKEN_SIZE[@]}"; do
-        python train.py  \
+        cd $RUN_DIR && python train.py  \
           --pretrained_path /home/featurize/distilbert-base-uncased/distilbert-base-uncased  \
           --code tune_params \
           --override \
