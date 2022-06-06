@@ -3,3 +3,4 @@ random
 ./data
 .pytest_cache
 data
+*.pyc
