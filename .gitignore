@@ -1,0 +1,5 @@
+random
+*.egg-info
+./data
+.pytest_cache
+data

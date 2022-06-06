@@ -1,0 +1,93 @@
+from bisect import bisect
+from collections import defaultdict
+import pickle
+from typing import Dict
+from ignite.metrics import Metric
+
+from ai4code.datasets import Sample
+
+
+def count_inversions(a):
+    inversions = 0
+    sorted_so_far = []
+    for i, u in enumerate(a):
+        j = bisect(sorted_so_far, u)
+        inversions += i - j
+        sorted_so_far.insert(j, u)
+    return inversions
+
+
+def kendall_tau(ground_truth, predictions):
+    total_inversions = 0
+    total_2max = 0  # twice the maximum possible inversions across all instances
+    for gt, pred in zip(ground_truth, predictions):
+        ranks = [
+            gt.index(x) for x in pred
+        ]  # rank predicted order in terms of ground truth
+        total_inversions += count_inversions(ranks)
+        n = len(gt)
+        total_2max += n * (n - 1)
+    return 1 - 4 * total_inversions / total_2max
+
+
+class KendallTauPairwise(Metric):
+    """pairwise 的 metric
+    对于一个 Sampe，计算所有 cell 对其他 cell 的得分，得到一个 N x N 的矩阵（N 是 cell number）
+    (n, m) 表示第 m 个 cell 排在第 n 个 cell 后面的概率。
+    """
+    def __init__(self, val_data: Dict[str, Sample], code_dir):
+        super().__init__()
+        self.val_data = val_data
+        self.code_dir = code_dir
+        self.epoch = 0
+
+    def reset(self):
+        self._pairwise_matrix = {}
+
+    def update(self, output):
+        pairwise_matric, sample = output
+        self._pairwise_matrix[sample.id] = pairwise_matric
+
+    def compute(self):
+        self.epoch += 1
+        pickle.dump(self._pairwise_matrix, open(self.code_dir / f"{self.epoch}.pairwise_matrix.pkl", "wb"))
+        return self.epoch
+
+
+class KendallTauNaive(Metric):
+    def __init__(self, val_data: Dict[str, Sample]):
+        super().__init__()
+        self.val_data = val_data
+
+    def reset(self):
+        self._predictions = defaultdict(dict)
+
+    def update(self, output):
+        loss, scores, sample_ids, cell_keys = output
+        for score, sample_id, cell_key in zip(scores, sample_ids, cell_keys):
+            self._predictions[sample_id][cell_key] = score.item()
+
+    def compute(self):
+        all_predictions = []
+        all_targets = []
+        for sample in self.val_data.values():
+            all_preds = []
+            for cell_key in sample.cell_keys:
+                cell_type = sample.cell_types[cell_key]
+                cell_rank = sample.cell_ranks_normed[cell_key]
+
+                if cell_type == "code":
+                    # keep the original cell_rank
+                    item = (cell_key, cell_rank)
+                else:
+                    item = (cell_key, self._predictions[sample.id][cell_key])
+                all_preds.append(item)
+            cell_id_predicted = [
+                item[0] for item in sorted(all_preds, key=lambda x: x[1])
+            ]
+            all_predictions.append(cell_id_predicted)
+            all_targets.append(sample.orders)
+
+        score = kendall_tau(all_targets, all_predictions)
+        print("Kendall Tau: ", score)
+        return score
