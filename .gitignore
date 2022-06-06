@@ -4,3 +4,4 @@ random
 .pytest_cache
 data
 *.pyc
+__pycache__
