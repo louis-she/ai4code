@@ -24,18 +24,18 @@ def common_preprocess(text):
     # replace links
     text = re.sub("https?:\/\/[^\s]+", "link", text)
     # remove all single characters
-    text = re.sub(r'\s+[a-zA-Z]\s+', ' ', text)
-    text = re.sub(r'\^[a-zA-Z]\s+', ' ', text)
-    text = re.sub(r'\s+[a-zA-Z]$', ' ', text)
+    text = re.sub(r"\s+[a-zA-Z]\s+", " ", text)
+    text = re.sub(r"\^[a-zA-Z]\s+", " ", text)
+    text = re.sub(r"\s+[a-zA-Z]$", " ", text)
     # substituting multiple spaces with single space
-    text = re.sub(r'\s+', ' ', text, flags=re.I)
+    text = re.sub(r"\s+", " ", text, flags=re.I)
     text = text.lower()
 
     # Lemmatization
     tokens = text.split()
     tokens = [stemmer.lemmatize(word) for word in tokens]
 
-    return ' '.join(tokens)
+    return " ".join(tokens)
 
 
 def code_preprocess(code):
@@ -44,7 +44,7 @@ def code_preprocess(code):
     code = re.sub(r"\[.*?\]", " ", code)
     code = re.sub(r"\{.*?\}", " ", code)
     # replace all numbers to number
-    code = re.sub(r'[1-9]+', ' number ', code)
+    code = re.sub(r"[1-9]+", " number ", code)
     code = re.sub(r"[\.\-\_\#\(\)\[\]\{\}\,\:\"\=']", " ", code)
 
     code = common_preprocess(code)
@@ -106,6 +106,7 @@ class RankDataset(torch.utils.data.Dataset):
                     self.all_cells.append((sample.id, cell_key))
 
         self.tokenizer = tokenizer
+        self.hash_id = self.tokenizer.encode("#", add_special_tokens=False)[0]
 
     def __len__(self):
         return len(self.all_cells)
@@ -144,9 +145,14 @@ class RankDataset(torch.utils.data.Dataset):
         # )
 
         anchor_encode = sample.cell_encodes[cell_key]
-        anchor_encode = anchor_encode[
-            0 : self.cell_token_size * self.cell_stride : self.cell_stride
+        # 对于 anchor_encode，不要通过 stride 来过滤 # 字符（token 为 1001）
+        # 对于不同的 tokenizer 这里
+        anchor_encode = [
+            x
+            for k, x in enumerate(anchor_encode)
+            if (k % self.cell_stride) == 0 or x == self.hash_id
         ]
+
         input_ids = [self.tokenizer.cls_token_id] + anchor_encode
         for context_cell_key, cell_encode in sample.cell_encodes.items():
             ctype = sample.cell_types[context_cell_key]
