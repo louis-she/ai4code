@@ -150,7 +150,7 @@ def main(
             if sample.ancestor in val_ancestors:
                 all_data[id].fold = fold
 
-    pickle.dump(all_data, open(f"../data/10fold{suffix}.pkl", "wb"))
+    pickle.dump(all_data, open(f"../data/10fold.{suffix}.pkl", "wb"))
     mini_data = {}
     for fold in range(10):
         mini_fold = [sample for sample in all_data.values() if sample.fold == fold][:100]
@@ -160,4 +160,4 @@ def main(
     assert len(mini_data) == 1000
     assert len([sample for sample in mini_data.values() if sample.fold == 0]) == 100
 
-    pickle.dump(mini_data, open(f"../data/10fold_mini{suffix}.pkl", "wb"))
+    pickle.dump(mini_data, open(f"../data/10fold_mini.{suffix}.pkl", "wb"))

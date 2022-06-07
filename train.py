@@ -27,6 +27,7 @@ def main(
     code: str,
     pretrained_path: str,
     dataset_suffix: str,
+    git_commits: str,
     lr: int = 3e-5,
     max_epochs: int = 5,
     batch_size: int = 256,
@@ -72,7 +73,7 @@ def main(
         )
 
     data: Dict[str, datasets.Sample] = pickle.load(
-        open(f"/home/featurize/work/ai4code/data/10fold{'_mini' if testing else ''}.v1.pkl", "rb")
+        open(f"/home/featurize/work/ai4code/data/10fold{'_mini' if testing else ''}.{dataset_suffix}.pkl", "rb")
     )
 
     val_data = {k: v for k, v in list(data.items()) if v.fold in val_folds}

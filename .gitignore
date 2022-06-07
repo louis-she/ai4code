@@ -6,3 +6,5 @@ data
 *.pyc
 __pycache__
 _runs
+
+tune.sh
