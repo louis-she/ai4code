@@ -72,8 +72,7 @@ if [ $machine_name = "A6000_1" ];then
   for cell_token_size in "${CELL_TOKEN_SIZE[@]}"; do
     for context_stride in "${CONTEXT_STRIDE[@]}"; do
       for context_cells_token_size in "${CONTEXT_CELLS_TOKEN_SIZE[@]}"; do
-        cd $RUN_DIR && run_command \
-          python train.py  \
+        cd $RUN_DIR && run_command python train.py  \
             --pretrained_path /home/featurize/distilbert-base-uncased/distilbert-base-uncased  \
             --code tune_params \
             --override \
