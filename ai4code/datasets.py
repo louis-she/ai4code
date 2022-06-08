@@ -150,7 +150,8 @@ class RankDataset(torch.utils.data.Dataset):
         anchor_encode = [
             x
             for k, x in enumerate(anchor_encode)
-            if (k % self.cell_stride) == 0 or x == self.hash_id
+            if ((k % self.cell_stride) == 0 or x == self.hash_id)
+            and k < (self.cell_token_size * self.cell_stride)
         ]
 
         input_ids = [self.tokenizer.cls_token_id] + anchor_encode
