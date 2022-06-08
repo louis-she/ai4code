@@ -123,7 +123,7 @@ def main(
         current_train_fold_idx += 1
 
         return DataLoader(
-            create_dataset(train_data),
+            create_dataset(train_data, ordered_context_ratio=ordered_context_ratio),
             num_workers=num_workers,
             batch_size=batch_size,
             shuffle=True,
