@@ -56,6 +56,7 @@ class KendallTauPairwise(Metric):
 
 class KendallTauNaive(Metric):
     def __init__(self, val_data: Dict[str, Sample]):
+        super().__init__()
         self.val_data = val_data
         self.reset()
 

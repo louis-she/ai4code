@@ -22,6 +22,7 @@ from ai4code.utils import SerializableDict
 LOG_DIR = Path("/home/featurize/ai4code")
 DEVICE = torch.device("cuda")
 
+os.environ['TOKENIZERS_PARALLELISM'] = "True"
 
 def main(
     code: str,
