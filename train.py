@@ -45,6 +45,7 @@ def main(
     with_scheduler: bool = False,
     extra_vocab: str = None,
     ordered_context_ratio: float = 0.3,
+    validate_with_ordered: bool = False,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,
@@ -131,7 +132,7 @@ def main(
         )
 
     val_loader = DataLoader(
-        create_dataset(val_data, ordered_context_ratio=0),
+        create_dataset(val_data, ordered_context_ratio=1 if validate_with_ordered else 0),
         num_workers=num_workers,
         batch_size=batch_size,
     )
