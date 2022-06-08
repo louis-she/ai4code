@@ -54,28 +54,28 @@ class KendallTauPairwise(Metric):
         return self.epoch
 
 
-class KendallTauNaive(Metric):
+class KendallTauNaive():
     def __init__(self, val_data: Dict[str, Sample]):
-        super().__init__()
         self.val_data = val_data
+        self.reset()
 
     def reset(self):
         self._predictions = defaultdict(dict)
+        self._all_predictions = []
+        self._all_targets = []
+        self._submission_data = {}
 
     def update(self, output):
-        loss, scores, sample_ids, cell_keys = output
-        for score, sample_id, cell_key in zip(scores, sample_ids, cell_keys):
-            self._predictions[sample_id][cell_key] = score.item()
+        loss, scores, sample_ids, cell_ids = output
+        for score, sample_id, cell_id in zip(scores, sample_ids, cell_ids):
+            self._predictions[sample_id][cell_id] = score.item()
 
     def compute(self):
-        all_predictions = []
-        all_targets = []
         for sample in self.val_data.values():
             all_preds = []
             for cell_key in sample.cell_keys:
                 cell_type = sample.cell_types[cell_key]
                 cell_rank = sample.cell_ranks_normed[cell_key]
-
                 if cell_type == "code":
                     # keep the original cell_rank
                     item = (cell_key, cell_rank)
@@ -85,9 +85,10 @@ class KendallTauNaive(Metric):
             cell_id_predicted = [
                 item[0] for item in sorted(all_preds, key=lambda x: x[1])
             ]
-            all_predictions.append(cell_id_predicted)
-            all_targets.append(sample.orders)
+            self._submission_data[sample.id] = cell_id_predicted
+            self._all_predictions.append(cell_id_predicted)
+            self._all_targets.append(sample.orders)
 
-        score = kendall_tau(all_targets, all_predictions)
+        score = kendall_tau(self._all_targets, self._all_predictions)
         print("Kendall Tau: ", score)
         return score

@@ -87,11 +87,13 @@ class RankDataset(torch.utils.data.Dataset):
         context_cells_token_size,
         context_stride,
         max_len,
+        ordered_context_ratio,
         shuffle_markdowns=True,
         with_code_cell=False,
     ):
         self.read_count = 0
         self.data = data
+        self.ordered_context_ratio = ordered_context_ratio
         self.context_cells_token_size = context_cells_token_size
         self.context_stride = context_stride
         self.shuffle_markdowns = shuffle_markdowns
@@ -115,35 +117,6 @@ class RankDataset(torch.utils.data.Dataset):
         sample_id, cell_key = self.all_cells[index]
         sample = self.data[sample_id]
 
-        # cell_content = (
-        #     code_preprocess(sample.sources[cell_index])
-        #     if cell_type == "code"
-        #     else markdown_preprocess(sample.sources[cell_index])
-        # )
-        # cell_input = self.tokenizer.encode_plus(
-        #     cell_content,
-        #     None,
-        #     add_special_tokens=True,
-        #     max_length=self.cell_token_size * self.cell_stride,
-        #     padding="do_not_pad",
-        #     return_token_type_ids=True,
-        #     truncation=True,
-        # )
-
-        # context_content = [
-        #     code_preprocess(source)
-        #     if cell_type == "code"
-        #     else markdown_preprocess(source)
-        #     for (cell_type, source) in zip(sample.cell_types, sample.sources)
-        # ]
-        # context_inputs = self.tokenizer.batch_encode_plus(
-        #     context_content,
-        #     add_special_tokens=True,
-        #     max_length=self.context_cells_token_size * self.context_stride,
-        #     padding="do_not_pad",
-        #     truncation=True,
-        # )
-
         anchor_encode = sample.cell_encodes[cell_key]
         # 对于 anchor_encode，不要通过 stride 来过滤 # 字符（token 为 1001）
         # 对于不同的 tokenizer 这里
@@ -155,15 +128,24 @@ class RankDataset(torch.utils.data.Dataset):
         ]
 
         input_ids = [self.tokenizer.cls_token_id] + anchor_encode
-        for context_cell_key, cell_encode in sample.cell_encodes.items():
-            ctype = sample.cell_types[context_cell_key]
-            if ctype == "markdown":
-                continue
+
+        # 将 context 分为两种，按概率随机选择其中的一种进行训练
+        use_ordered_context = random.random() < self.ordered_context_ratio
+        if not use_ordered_context:
+            # 1. anchor + code cells
+            context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
+        else:
+            # 2. anchor + ordered cells (这里不加 anchor 本身)
+            context_cell_keys = [key for key in sample.orders if key != cell_key]
+
+        for context_cell_key in context_cell_keys:
+            cell_encode = sample.cell_encodes[context_cell_key]
             context_encode = cell_encode[
                 0 : self.context_cells_token_size
                 * self.context_stride : self.context_stride
             ]
             input_ids += [self.tokenizer.sep_token_id] + context_encode
+
         input_ids += [self.tokenizer.sep_token_id]
         input_ids = input_ids[: self.max_len]
         pad_len = self.max_len - len(input_ids)
@@ -178,43 +160,6 @@ class RankDataset(torch.utils.data.Dataset):
             torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
             sample_id,
             cell_key,
-        )
-
-        # 对于 BertTokenizer 将句子处理为：
-        # <cls> + markdown + <seq> + code + <seq> + ... + code + <seq>
-        input_ids = cell_input["input_ids"][
-            0 : self.cell_token_size * self.cell_stride : self.cell_stride
-        ]
-        # cell content mask
-        length_of_cell_id = len(input_ids)
-        cell_mask = torch.tensor(
-            [1] * length_of_cell_id + [0] * (self.max_len - length_of_cell_id)
-        ).long()
-        for context_input_id in context_inputs["input_ids"]:
-            context_id = context_input_id[
-                0 : self.context_cells_token_size
-                * self.context_stride : self.context_stride
-            ]
-            input_ids.extend(context_id[1:])
-
-        input_ids = input_ids[: self.max_len]
-        input_len = len(input_ids)
-        pad_size = self.max_len - input_len
-        input_ids = input_ids + [self.tokenizer.pad_token_id] * pad_size
-
-        mask = torch.cat([torch.ones(input_len), torch.zeros(pad_size)]).long()
-        ids = torch.tensor(input_ids).long()
-
-        label = torch.tensor(sample.cell_ranks_normed[cell_index]).float()
-
-        return (
-            ids,
-            mask,
-            cell_mask,
-            torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
-            torch.tensor([label]),
-            sample_id,
-            cell_id,
         )
 
 

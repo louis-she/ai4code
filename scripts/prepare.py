@@ -1,3 +1,4 @@
+import fire
 import pandas as pd
 from pathlib import Path
 import pickle
@@ -43,12 +44,83 @@ def get_ranks(cell_types, cell_orders, cell_keys):
     return cell_ranks
 
 
+orders_dict, ancestors_dict, tokenizer = None, None, None
+
+
+def process(file):
+    global orders_dict, ancestors_dict, tokenizer
+
+    id = file.stem
+    content = file.read_text()
+    body = json.loads(content)
+    hash_object = hashlib.sha1(content.encode())
+
+    content_sha1 = hash_object.hexdigest()
+    content_len = len(content)
+    markdown_count = 0
+    code_count = 0
+
+    cell_keys = list(body['cell_type'].keys())
+    cell_sha1s = {}
+    cell_lens = {}
+    cell_ranks = {}
+    cell_types = body['cell_type']
+    cell_orders = orders_dict[id]
+
+    for key in cell_keys:
+        type = body['cell_type'][key]
+        if type == "code":
+            code_count += 1
+        elif type == "markdown":
+            markdown_count += 1
+        else:
+            print(f"Unknown type {type}, ignore")
+        source = body['source'][key]
+        hash_object = hashlib.sha1(source.encode())
+        cell_sha1s[key] = hash_object.hexdigest()
+        cell_lens[key] = len(source)
+
+    cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
+    cell_ranks_max = max(cell_ranks.values())
+    cell_ranks_normed = {cell_id: (rank / cell_ranks_max) for cell_id, rank in cell_ranks.items()}
+    ancestor = ancestors_dict[id][0] if isinstance(ancestors_dict[id][0], str) else None
+    parent = ancestors_dict[id][1] if isinstance(ancestors_dict[id][1], str) else None
+
+    cell_encodes = {}
+    for cell_key, value in body["source"].items():
+        if cell_types[cell_key] == "code":
+            processor = datasets.code_preprocess
+        else:
+            processor = datasets.markdown_preprocess
+        value = processor(value)
+        cell_encodes[cell_key] = tokenizer.encode(value, add_special_tokens=False)
+
+    sample = Sample(
+        id=id,
+        sources=body['source'],
+        ancestor=ancestor,
+        parent=parent,
+        orders=orders_dict[id],
+        markdown_cell_count=markdown_count,
+        code_cell_count=code_count,
+        content_sha1=content_sha1,
+        content_len=content_len,
+        cell_keys=list(cell_keys),
+        cell_sha1s=cell_sha1s,
+        cell_lens=cell_lens,
+        cell_ranks=cell_ranks,
+        cell_ranks_normed=cell_ranks_normed,
+        cell_types=cell_types,
+        cell_encodes=cell_encodes
+    )
+    return sample
 
 
 def main(
     suffix: str,
     pretrained_tokenizer: str,
 ):
+    global orders_dict, ancestors_dict, tokenizer
     dataset_root = Path("/home/featurize/data")
     ancestors = pd.read_csv(dataset_root / "train_ancestors.csv")
 
@@ -64,71 +136,7 @@ def main(
 
     tokenizer = AutoTokenizer.from_pretrained(pretrained_tokenizer, do_lower_case=True, use_fast=True)
 
-    def process(file):
-        id = file.stem
-        content = file.read_text()
-        body = json.loads(content)
-        hash_object = hashlib.sha1(content.encode())
 
-        content_sha1 = hash_object.hexdigest()
-        content_len = len(content)
-        markdown_count = 0
-        code_count = 0
-
-        cell_keys = list(body['cell_type'].keys())
-        cell_sha1s = {}
-        cell_lens = {}
-        cell_ranks = {}
-        cell_types = body['cell_type']
-        cell_orders = orders_dict[id]
-
-        for key in cell_keys:
-            type = body['cell_type'][key]
-            if type == "code":
-                code_count += 1
-            elif type == "markdown":
-                markdown_count += 1
-            else:
-                print(f"Unknown type {type}, ignore")
-            source = body['source'][key]
-            hash_object = hashlib.sha1(source.encode())
-            cell_sha1s[key] = hash_object.hexdigest()
-            cell_lens[key] = len(source)
-
-        cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
-        cell_ranks_max = max(cell_ranks.values())
-        cell_ranks_normed = {cell_id: (rank / cell_ranks_max) for cell_id, rank in cell_ranks.items()}
-        ancestor = ancestors_dict[id][0] if isinstance(ancestors_dict[id][0], str) else None
-        parent = ancestors_dict[id][1] if isinstance(ancestors_dict[id][1], str) else None
-
-        cell_encodes = {}
-        for cell_key, value in body["source"].items():
-            if cell_types[cell_key] == "code":
-                processor = datasets.code_preprocess
-            else:
-                processor = datasets.markdown_preprocess
-            value = processor(value)
-            cell_encodes[cell_key] = tokenizer.encode(value, add_special_tokens=False)
-
-        sample = Sample(
-            id=id,
-            sources=body['source'],
-            ancestor=ancestor,
-            parent=parent,
-            orders=orders_dict[id],
-            markdown_cell_count=markdown_count,
-            code_cell_count=code_count,
-            content_sha1=content_sha1,
-            content_len=content_len,
-            cell_keys=list(cell_keys),
-            cell_sha1s=cell_sha1s,
-            cell_lens=cell_lens,
-            cell_ranks=cell_ranks,
-            cell_ranks_normed=cell_ranks_normed,
-            cell_types=cell_types,
-            cell_encodes=cell_encodes
-        )
-        return sample
 
     with multiprocessing.Pool(processes=8) as pool:
         results = list(
@@ -150,7 +158,11 @@ def main(
             if sample.ancestor in val_ancestors:
                 all_data[id].fold = fold
 
-    pickle.dump(all_data, open(f"../data/10fold.{suffix}.pkl", "wb"))
+    pickle.dump(all_data, open(f"/home/featurize/work/ai4code/data/10fold.{suffix}.pkl", "wb"))
+
+    fold0 = {k: v for k, v in all_data.items() if v.fold == 0}
+    pickle.dump(fold0, open(f"/home/featurize/work/ai4code/data/fold0.{suffix}.pkl", "wb"))
+
     mini_data = {}
     for fold in range(10):
         mini_fold = [sample for sample in all_data.values() if sample.fold == fold][:100]
@@ -160,4 +172,8 @@ def main(
     assert len(mini_data) == 1000
     assert len([sample for sample in mini_data.values() if sample.fold == 0]) == 100
 
-    pickle.dump(mini_data, open(f"../data/10fold_mini.{suffix}.pkl", "wb"))
+    pickle.dump(mini_data, open(f"/home/featurize/work/ai4code/data/10fold_mini.{suffix}.pkl", "wb"))
+
+
+if __name__ == "__main__":
+    fire.Fire(main)

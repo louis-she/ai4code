@@ -43,6 +43,7 @@ def main(
     evaluate_every: int = 1,
     with_scheduler: bool = False,
     extra_vocab: str = None,
+    ordered_context_ratio: float = 0.3,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,
@@ -94,7 +95,7 @@ def main(
         nonlocal current_train_fold_idx
         current_train_fold_idx = 0
 
-    def create_dataset(data):
+    def create_dataset(data, ordered_context_ratio):
         return datasets.RankDataset(
             data,
             tokenizer=tokenizer,
@@ -103,6 +104,7 @@ def main(
             context_cells_token_size=context_cells_token_size,
             context_stride=context_stride,
             max_len=max_len,
+            ordered_context_ratio=ordered_context_ratio
         )
 
     def get_next_loader():
@@ -128,7 +130,7 @@ def main(
         )
 
     val_loader = DataLoader(
-        create_dataset(val_data),
+        create_dataset(val_data, ordered_context_ratio=0),
         num_workers=num_workers,
         batch_size=batch_size,
     )
