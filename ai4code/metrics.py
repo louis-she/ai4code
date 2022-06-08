@@ -54,7 +54,7 @@ class KendallTauPairwise(Metric):
         return self.epoch
 
 
-class KendallTauNaive():
+class KendallTauNaive(Metric):
     def __init__(self, val_data: Dict[str, Sample]):
         self.val_data = val_data
         self.reset()
