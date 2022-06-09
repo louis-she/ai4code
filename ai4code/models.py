@@ -23,11 +23,12 @@ class Model(nn.Module):
             nn.Linear(in_features=out_features_num, out_features=1),
         )
 
-    def forward(self, x, mask, code_ratio):
+    def forward(self, x, mask, cell_numbers):
         output = self.backbone(x, mask)
         x = output[0]  # (bs, seq_len, dim)
         x = x[:, 0] # (bs, dim)
-        x = torch.cat([x, code_ratio], dim=1) # (bs, dim + 1)
+        code_percent = cell_numbers[:, 0] / (cell_numbers[:, 0] + cell_numbers[:, 1])
+        x = torch.cat([x, code_percent.unsqueeze(1)], dim=1) # (bs, dim + 1)
         x = self.classifier(x)
         return x
 
