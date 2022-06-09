@@ -14,7 +14,7 @@ class Model(nn.Module):
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
         except:
             out_features_num = 768
-        output_features_num += 1
+        out_features_num += 1
 
         self.classifier = nn.Sequential(
             nn.Linear(in_features=out_features_num, out_features=out_features_num),
