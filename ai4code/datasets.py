@@ -443,11 +443,19 @@ class NewDataset(RankDataset):
 #         )
 
 
+@dataclass
+class SpecialTokenID:
+    hash_id: int
+    cls_token_id: int
+    sep_token_id: int
+    pad_token_id: int
+
+
 class RankDatasetWithSplits(torch.utils.data.Dataset):
     def __init__(
         self,
         data: Dict[str, Sample],
-        tokenizer: AutoTokenizer,
+        special_tokens: SpecialTokenID,
         cell_token_size,
         cell_stride,
         context_cells_token_size,
@@ -477,9 +485,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
                 for cell_key in sample.cell_keys:
                     if sample.cell_types[cell_key] == "markdown":
                         self.all_cells.append((sample.id, cell_key, split_id))
-
-        self.tokenizer = tokenizer
-        self.hash_id = self.tokenizer.encode("#", add_special_tokens=False)[0]
+        self.special_tokens = special_tokens
 
     def __len__(self):
         return len(self.all_cells)
@@ -498,7 +504,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
             and k < (self.cell_token_size * self.cell_stride)
         ]
 
-        input_ids = [self.tokenizer.cls_token_id] + anchor_encode
+        input_ids = [self.special_tokens.cls_token_id] + anchor_encode
 
         context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
         context_cell_keys = context_cell_keys[split_id*self.split_len:(split_id+1)*self.split_len]
@@ -509,12 +515,12 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
                 0 : self.context_cells_token_size
                 * self.context_stride : self.context_stride
             ]
-            input_ids += [self.tokenizer.sep_token_id] + context_encode
+            input_ids += [self.special_tokens.sep_token_id] + context_encode
 
-        input_ids += [self.tokenizer.sep_token_id]
+        input_ids += [self.special_tokens.sep_token_id]
         input_ids = input_ids[: self.max_len]
         pad_len = self.max_len - len(input_ids)
-        input_ids += [self.tokenizer.pad_token_id] * pad_len
+        input_ids += [self.special_tokens.pad_token_id] * pad_len
         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
         # start_rank: 1 or 9 or 17 ...

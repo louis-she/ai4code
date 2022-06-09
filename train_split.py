@@ -19,10 +19,12 @@ from transformers import AdamW, AutoTokenizer
 from ai4code import datasets, metrics, models
 from ai4code.utils import SerializableDict
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 LOG_DIR = Path("/home/featurize/ai4code")
 DEVICE = torch.device("cuda")
 
-os.environ['TOKENIZERS_PARALLELISM'] = "True"
+os.environ['TOKENIZERS_PARALLELISM'] = "False"
 
 def main(
     code: str,
@@ -92,6 +94,13 @@ def main(
         extra_vocab: Counter = pickle.load(open(extra_vocab, "rb"))
         tokenizer.add_tokens(x[0] for x in extra_vocab.most_common(2000))
 
+    special_tokens = datasets.SpecialTokenID(
+        hash_id=tokenizer.encode("#", add_special_tokens=False)[0],
+        cls_token_id=tokenizer.cls_token_id,
+        sep_token_id=tokenizer.sep_token_id,
+        pad_token_id=tokenizer.pad_token_id
+    )
+
     current_train_fold_idx = 0
 
     def reset_fold_idx():
@@ -101,7 +110,7 @@ def main(
     def create_dataset(data, ordered_context_ratio):
         return datasets.RankDatasetWithSplits(
             data,
-            tokenizer=tokenizer,
+            special_tokens=special_tokens,
             cell_token_size=cell_token_size,
             cell_stride=cell_stride,
             context_cells_token_size=context_cells_token_size,

@@ -150,10 +150,11 @@ def main(
     def train(engine, batch):
         model.train()
         ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:4]]
+        code_percent = cell_numbers[:, 0] / (cell_numbers[:, 0] + cell_numbers[:, 1])
 
         optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
-            pred = model(ids, mask, cell_numbers)
+            pred = model(ids, mask, code_percent)
             loss = criterion(pred, targets)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
