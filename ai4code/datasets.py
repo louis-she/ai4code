@@ -120,7 +120,7 @@ class RankDataset(torch.utils.data.Dataset):
 
     def preprocess(self, ids):
         if self.english_only:
-            ids = [ids for input_id in ids if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id]
+            ids = [input_id for input_id in ids if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id]
         return ids
 
     def __getitem__(self, index: int):
