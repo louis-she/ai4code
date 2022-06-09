@@ -40,6 +40,8 @@ def common_preprocess(text):
 
 
 def code_preprocess(code):
+    # replace links
+    code = re.sub("https?:\/\/[^\s]+", "link", code)
     # replace [....], {...} to empty
     code = re.sub(r"\s+", " ", code)
     code = re.sub(r"\[.*?\]", " ", code)
@@ -91,6 +93,7 @@ class RankDataset(torch.utils.data.Dataset):
         ordered_context_ratio,
         shuffle_markdowns=True,
         with_code_cell=False,
+        english_only=False
     ):
         self.read_count = 0
         self.data = data
@@ -101,6 +104,7 @@ class RankDataset(torch.utils.data.Dataset):
         self.cell_token_size = cell_token_size
         self.cell_stride = cell_stride
         self.max_len = max_len
+        self.english_only = english_only
         self.all_cells = []
 
         for sample in list(self.data.values()):
@@ -114,11 +118,17 @@ class RankDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.all_cells)
 
+    def preprocess(self, ids):
+        if self.english_only:
+            ids = [ids for input_id in ids if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id]
+        return ids
+
     def __getitem__(self, index: int):
         sample_id, cell_key = self.all_cells[index]
         sample = self.data[sample_id]
 
-        anchor_encode = sample.cell_encodes[cell_key]
+        anchor_encode = self.preprocess(sample.cell_encodes[cell_key])
+
         # 对于 anchor_encode，不要通过 stride 来过滤 # 字符（token 为 1001）
         # 对于不同的 tokenizer 这里
         anchor_encode = [
@@ -140,7 +150,7 @@ class RankDataset(torch.utils.data.Dataset):
             context_cell_keys = [key for key in sample.orders if key != cell_key]
 
         for context_cell_key in context_cell_keys:
-            cell_encode = sample.cell_encodes[context_cell_key]
+            cell_encode = self.preprocess(sample.cell_encodes[context_cell_key])
             context_encode = cell_encode[
                 0 : self.context_cells_token_size
                 * self.context_stride : self.context_stride
@@ -148,6 +158,7 @@ class RankDataset(torch.utils.data.Dataset):
             input_ids += [self.tokenizer.sep_token_id] + context_encode
 
         input_ids += [self.tokenizer.sep_token_id]
+
         input_ids = input_ids[: self.max_len]
         pad_len = self.max_len - len(input_ids)
         input_ids += [self.tokenizer.pad_token_id] * pad_len
