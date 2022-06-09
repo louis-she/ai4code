@@ -14,7 +14,6 @@ class Model(nn.Module):
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
         except:
             out_features_num = 768
-        out_features_num += 1
 
         self.classifier = nn.Sequential(
             nn.Linear(in_features=out_features_num, out_features=out_features_num),
@@ -27,8 +26,8 @@ class Model(nn.Module):
         output = self.backbone(x, mask)
         x = output[0]  # (bs, seq_len, dim)
         x = x[:, 0] # (bs, dim)
-        code_percent = cell_numbers[:, 0] / (cell_numbers[:, 0] + cell_numbers[:, 1])
-        x = torch.cat([x, code_percent.unsqueeze(1)], dim=1) # (bs, dim + 1)
+        # code_percent = cell_numbers[:, 0] / (cell_numbers[:, 0] + cell_numbers[:, 1])
+        # x = torch.cat([x, code_percent.unsqueeze(1)], dim=1) # (bs, dim + 1)
         x = self.classifier(x)
         return x
 
