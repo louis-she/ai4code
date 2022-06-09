@@ -1,3 +1,4 @@
+import math
 import fire
 import pandas as pd
 from pathlib import Path
@@ -81,7 +82,7 @@ def process(file):
         cell_lens[key] = len(source)
 
     cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
-    cell_ranks_max = max(cell_ranks.values())
+    cell_ranks_max = max(cell_ranks.values()) + 1
     cell_ranks_normed = {cell_id: (rank / cell_ranks_max) for cell_id, rank in cell_ranks.items()}
     ancestor = ancestors_dict[id][0] if isinstance(ancestors_dict[id][0], str) else None
     parent = ancestors_dict[id][1] if isinstance(ancestors_dict[id][1], str) else None

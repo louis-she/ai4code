@@ -93,3 +93,56 @@ class KendallTauNaive(Metric):
         score = kendall_tau(self._all_targets, self._all_predictions)
         print("Kendall Tau: ", score)
         return score
+
+
+class KendallTauWithSplits(Metric):
+    def __init__(self, val_data: Dict[str, Sample], split_len):
+        super().__init__()
+        self.val_data = val_data
+        self.split_len = split_len
+        self.reset()
+
+    def reset(self):
+        self._predictions = defaultdict(lambda: defaultdict(dict))
+        self._all_predictions = []
+        self._all_targets = []
+        self._submission_data = {}
+
+    def update(self, output):
+        loss, in_splits, ranks, sample_ids, cell_ids, split_ids = output
+        for in_split, rank, sample_id, cell_id, split_id in zip(in_splits, ranks, sample_ids, cell_ids, split_ids):
+            self._predictions[sample_id][cell_id][split_id] = [in_split, rank, sample_id, split_id]
+
+    def compute(self):
+        for sample in self.val_data.values():
+            all_preds = []
+            for cell_key in sample.cell_keys:
+                cell_type = sample.cell_types[cell_key]
+                cell_rank = sample.cell_ranks[cell_key]
+                if cell_type == "code":
+                    # keep the original cell_rank
+                    item = (cell_key, cell_rank)
+                else:
+                    # markdown cell，选出 in_split 得分最高的，取 rank + split_offset
+                    item = (cell_key, self._predictions[sample.id][cell_key])
+                    split_results = self._predictions[sample.id][cell_key]
+
+                    max_in_split_score = -float('inf')
+                    in_split_result = None
+                    for split_id, result in split_results.items():
+                        if result[0] > max_in_split_score:
+                            in_split_result = result
+                    cell_rank = in_split_result[1] * (self.split_len + 1) + (split_id * self.split_len)
+                    item = (cell_key, cell_rank)
+
+                all_preds.append(item)
+            cell_id_predicted = [
+                item[0] for item in sorted(all_preds, key=lambda x: x[1])
+            ]
+            self._submission_data[sample.id] = cell_id_predicted
+            self._all_predictions.append(cell_id_predicted)
+            self._all_targets.append(sample.orders)
+
+        score = kendall_tau(self._all_targets, self._all_predictions)
+        print("Kendall Tau: ", score)
+        return score

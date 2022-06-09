@@ -31,6 +31,39 @@ class Model(nn.Module):
         return x
 
 
+class MultiHeadModel(nn.Module):
+
+    def __init__(self, pretrained_path, dropout=0.2):
+        super().__init__()
+        self.pretrained_path = pretrained_path
+        self.backbone = AutoModel.from_pretrained(pretrained_path)
+        try:
+            out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
+        except:
+            out_features_num = 768
+
+        self.classifier = nn.Sequential(
+            nn.Linear(in_features=out_features_num, out_features=out_features_num),
+            nn.GELU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(in_features=out_features_num, out_features=1),
+        )
+
+        self.ranker = nn.Sequential(
+            nn.Linear(in_features=out_features_num, out_features=out_features_num),
+            nn.GELU(),
+            nn.Dropout(p=dropout),
+            nn.Linear(in_features=out_features_num, out_features=1),
+        )
+
+    def forward(self, x, mask, cell_nums):
+        output = self.backbone(x, mask)
+        x = output[0]  # (bs, seq_len, dim)
+        feature = x[:, 0] # (bs, dim)
+        # x = torch.cat([x, cell_nums], dim=1) # (bs, dim + 2)
+        return self.classifier(feature), self.ranker(feature)
+
+
 class LongFormer(nn.Module):
     def __init__(self, pretrained_path, dropout=0.2):
         super().__init__()
