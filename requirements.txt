@@ -2,3 +2,4 @@ fire
 aim
 pytorch-ignite
 transformers
+nltk
