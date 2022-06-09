@@ -7,5 +7,7 @@ data
 __pycache__
 _runs
 
+*.ipynb
+
 tune.sh
 test.py

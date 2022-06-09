@@ -21,41 +21,57 @@ import gc
 stemmer = WordNetLemmatizer()
 
 
-def common_preprocess(text):
-    # replace links
-    text = re.sub("https?:\/\/[^\s]+", "link", text)
-    # remove all single characters
+def links_to_word(text):
+    return re.sub("https?:\/\/[^\s]+", " link ", text)
+
+
+def no_char(text):
     text = re.sub(r"\s+[a-zA-Z]\s+", " ", text)
     text = re.sub(r"\^[a-zA-Z]\s+", " ", text)
     text = re.sub(r"\s+[a-zA-Z]$", " ", text)
-    # substituting multiple spaces with single space
-    text = re.sub(r"\s+", " ", text, flags=re.I)
-    text = text.lower()
+    return text
 
-    # Lemmatization
+
+def no_markdown_special(text):
+    return re.sub(r"[\.\*\+\-\_\>\<\~\(\)\[\]]", " ", text)
+
+
+def no_html_tags(text):
+    return re.sub("<.*?>", " ", text)
+
+
+def no_multi_spaces(text):
+    return re.sub(r"\s+", " ", text, flags=re.I)
+
+
+def lemmatize(text):
     tokens = text.split()
     tokens = [stemmer.lemmatize(word) for word in tokens]
-
     return " ".join(tokens)
 
 
-def code_preprocess(code):
-    # replace links
-    code = re.sub("https?:\/\/[^\s]+", "link", code)
-    # replace [....], {...} to empty
-    code = re.sub(r"\s+", " ", code)
-    code = re.sub(r"\[.*?\]", " ", code)
-    code = re.sub(r"\{.*?\}", " ", code)
-    # replace all numbers to number
-    code = re.sub(r"[1-9]+", " number ", code)
-    code = re.sub(r"[\.\-\_\#\(\)\[\]\{\}\,\:\"\=']", " ", code)
+def underscore_to_space(text: str):
+    text = text.replace("_", " ")
+    text = text.replace("-", " ")
+    return text
 
-    code = common_preprocess(code)
+
+def code_preprocess(code):
+    code = links_to_word(code)
+    code = underscore_to_space(code)
+    code = no_char(code)
+    code = no_multi_spaces(code)
+    code = lemmatize(code)
     return code
 
 
 def markdown_preprocess(code):
-    code = common_preprocess(code)
+    code = links_to_word(code)
+    code = no_markdown_special(code)
+    code = no_html_tags(code)
+    code = no_char(code)
+    code = no_multi_spaces(code)
+    code = lemmatize(code)
     return code
 
 
