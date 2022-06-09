@@ -44,7 +44,7 @@ def main(
     evaluate_every: int = 1,
     with_scheduler: bool = False,
     extra_vocab: str = None,
-    ordered_context_ratio: float = 0.3,
+    ordered_context_ratio: float = 0.0,
     validate_with_ordered: bool = False,
     # dataset temp
     negative_ratio: float = 0.5,
