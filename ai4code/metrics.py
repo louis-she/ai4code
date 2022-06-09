@@ -122,6 +122,7 @@ class KendallTauWithSplits(Metric):
                 if cell_type == "code":
                     # keep the original cell_rank
                     item = (cell_key, cell_rank)
+                    print("code: ", item)
                 else:
                     # markdown cell，选出 in_split 得分最高的，取 rank + split_offset
                     item = (cell_key, self._predictions[sample.id][cell_key])
@@ -132,7 +133,10 @@ class KendallTauWithSplits(Metric):
                     for split_id, result in split_results.items():
                         if result[0] > max_in_split_score:
                             in_split_result = result
-                    cell_rank = in_split_result[1] * (self.split_len + 1) + (split_id * self.split_len)
+                            max_in_split_score = result[0]
+                    rank_normed, split_id = in_split_result[1], in_split_result[3]
+                    cell_rank = rank_normed * (self.split_len + 1) + (split_id * self.split_len)
+                    print("markdown: ", rank_normed, cell_rank, self.split_len, split_id)
                     item = (cell_key, cell_rank)
 
                 all_preds.append(item)
