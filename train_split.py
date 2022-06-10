@@ -19,7 +19,7 @@ from transformers import AdamW, AutoTokenizer
 from ai4code import datasets, metrics, models
 from ai4code.utils import SerializableDict
 
-torch.multiprocessing.set_sharing_strategy('file_system')
+# torch.multiprocessing.set_sharing_strategy('file_system')
 
 LOG_DIR = Path("/home/featurize/ai4code")
 DEVICE = torch.device("cuda")

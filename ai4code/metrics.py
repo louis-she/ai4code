@@ -111,7 +111,7 @@ class KendallTauWithSplits(Metric):
     def update(self, output):
         loss, in_splits, ranks, sample_ids, cell_ids, split_ids = output
         for in_split, rank, sample_id, cell_id, split_id in zip(in_splits, ranks, sample_ids, cell_ids, split_ids):
-            self._predictions[sample_id][cell_id][split_id] = [in_split, rank, sample_id, split_id]
+            self._predictions[sample_id][cell_id][split_id] = [in_split.item(), rank.item(), sample_id, split_id]
 
     def compute(self):
         for sample in self.val_data.values():
