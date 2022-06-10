@@ -44,9 +44,9 @@ def main(
     train_folds: Tuple[int] = (1,),
     val_folds: Tuple[int] = (0,),
     evaluate_every: int = 1,
-    with_scheduler: bool = False,
+    with_scheduler: bool = True,
     extra_vocab: str = None,
-    ordered_context_ratio: float = 0.3,
+    ordered_context_ratio: float = 0.0,
     validate_with_ordered: bool = False,
     split_len: int = 8,
     # dataset temp
