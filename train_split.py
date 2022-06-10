@@ -49,6 +49,7 @@ def main(
     ordered_context_ratio: float = 0.0,
     validate_with_ordered: bool = False,
     split_len: int = 8,
+    accumulation_steps: int = 1,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,

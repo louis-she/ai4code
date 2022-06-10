@@ -82,7 +82,7 @@ def process(file):
         cell_lens[key] = len(source)
 
     cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
-    cell_ranks_norm_factor = code_count + 1
+    cell_ranks_norm_factor = (code_count + 1) / 2
     cell_ranks_normed = {cell_id: (rank / cell_ranks_norm_factor) for cell_id, rank in cell_ranks.items()}
     ancestor = ancestors_dict[id][0] if isinstance(ancestors_dict[id][0], str) else None
     parent = ancestors_dict[id][1] if isinstance(ancestors_dict[id][1], str) else None
@@ -117,9 +117,12 @@ def process(file):
 def main(
     suffix: str,
     pretrained_tokenizer: str,
+    processor: str = None,
 ):
     global orders_dict, ancestors_dict, tokenizer, processor_suffix
-    processor_suffix = f"preprocessor_{suffix}"
+    if processor is None:
+        processor = suffix
+    processor_suffix = f"preprocessor_{processor}"
     dataset_root = Path("/home/featurize/data")
     ancestors = pd.read_csv(dataset_root / "train_ancestors.csv")
 
