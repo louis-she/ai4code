@@ -19,12 +19,12 @@ from transformers import AdamW, AutoTokenizer
 from ai4code import datasets, metrics, models
 from ai4code.utils import SerializableDict
 
-# torch.multiprocessing.set_sharing_strategy('file_system')
+torch.multiprocessing.set_sharing_strategy('file_system')
+
+os.environ['TOKENIZERS_PARALLELISM'] = "false"
 
 LOG_DIR = Path("/home/featurize/ai4code")
 DEVICE = torch.device("cuda")
-
-os.environ['TOKENIZERS_PARALLELISM'] = "False"
 
 def main(
     code: str,
@@ -89,6 +89,7 @@ def main(
     tokenizer = AutoTokenizer.from_pretrained(
         pretrained_path, do_lower_case=True, use_fast=True
     )
+    vocab_len = len(tokenizer)
 
     if extra_vocab:
         extra_vocab: Counter = pickle.load(open(extra_vocab, "rb"))
@@ -100,6 +101,8 @@ def main(
         sep_token_id=tokenizer.sep_token_id,
         pad_token_id=tokenizer.pad_token_id
     )
+
+    del tokenizer
 
     current_train_fold_idx = 0
 
@@ -150,7 +153,7 @@ def main(
 
     model = models.MultiHeadModel(pretrained_path, dropout)
     if extra_vocab:
-        model.backbone.resize_token_embeddings(len(tokenizer))
+        model.backbone.resize_token_embeddings(vocab_len)
     model.to(DEVICE)
 
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
