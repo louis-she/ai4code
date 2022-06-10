@@ -40,7 +40,7 @@ def main(
     optimizer: str = "AdamW",
     testing: bool = False,
     saving_checkpoint: bool = True,
-    num_workers: int = 4,
+    num_workers: int = 2,
     train_folds: Tuple[int] = (1,),
     val_folds: Tuple[int] = (0,),
     evaluate_every: int = 1,
