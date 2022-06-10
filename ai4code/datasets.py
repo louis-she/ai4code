@@ -2,11 +2,13 @@ import ast
 from copy import copy
 import math
 import random
+import numpy as np
 from typing import Dict, List, Optional
 import re
 from markdown import markdown
 from tokenizers import Tokenizer
 import torch
+from operator import itemgetter
 from transformers import (
     AutoTokenizer,
     DistilBertTokenizer,
@@ -175,7 +177,6 @@ class RankDataset(torch.utils.data.Dataset):
         anchor_encode = self.preprocess(sample.cell_encodes[cell_key])
 
         # 对于 anchor_encode，不要通过 stride 来过滤 # 字符（token 为 1001）
-        # 对于不同的 tokenizer 这里
         anchor_encode = [
             x
             for k, x in enumerate(anchor_encode)
@@ -565,15 +566,25 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
         context_cell_keys = context_cell_keys[split_id*self.split_len:(split_id+1)*self.split_len]
 
+        context_encodes = []
+        context_lens = []
         for context_cell_key in context_cell_keys:
             cell_encode = sample.cell_encodes[context_cell_key]
-            context_encode = cell_encode[
-                0 : self.context_cells_token_size
-                * self.context_stride : self.context_stride
-            ]
-            input_ids += [self.special_tokens.sep_token_id] + context_encode
+            context_encode = cell_encode[0::self.context_stride]
+            context_encodes.append(context_encode)
+            context_lens.append(len(context_encode))
+
+        current_total_length = sum(context_lens)
+        cut_off_number = current_total_length - self.max_len + len(anchor_encode) + self.split_len + 2
+        if cut_off_number > 0:
+            for _ in range(cut_off_number):
+                max_index = context_lens.index(max(context_lens))
+                context_lens[max_index] -= 1
+        for i, (context_encode, context_len) in enumerate(zip(context_encodes, context_lens)):
+            input_ids += [self.special_tokens.sep_token_id] + context_encode[:context_len]
 
         input_ids += [self.special_tokens.sep_token_id]
+
         input_ids = input_ids[: self.max_len]
         pad_len = self.max_len - len(input_ids)
         input_ids += [self.special_tokens.pad_token_id] * pad_len
