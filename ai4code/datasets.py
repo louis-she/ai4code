@@ -1,3 +1,4 @@
+import ast
 from copy import copy
 import math
 import random
@@ -56,7 +57,7 @@ def underscore_to_space(text: str):
     return text
 
 
-def code_preprocess(code):
+def code_preprocess_v4(code):
     code = links_to_word(code)
     code = underscore_to_space(code)
     code = no_char(code)
@@ -65,7 +66,7 @@ def code_preprocess(code):
     return code
 
 
-def markdown_preprocess(code):
+def markdown_preprocess_v4(code):
     code = links_to_word(code)
     code = no_markdown_special(code)
     code = no_html_tags(code)
@@ -73,6 +74,34 @@ def markdown_preprocess(code):
     code = no_multi_spaces(code)
     code = lemmatize(code)
     return code
+
+
+def code_preprocess_v5(code):
+    """
+    仅保留顶层代码，丢弃所有 nested 的代码
+    """
+    lines = code.split("\n")
+    outputs = []
+    for i, line in enumerate(lines):
+        if not line.startswith(" "):
+            outputs.append(line)
+
+    return code_preprocess_v4("\n".join(outputs))
+
+
+def preprocessor_v4(text, type):
+    return dict(
+        code=code_preprocess_v4,
+        markdown=markdown_preprocess_v4
+    )[type](text)
+
+
+def preprocessor_v5(text, type):
+    return dict(
+        code=code_preprocess_v5,
+        markdown=markdown_preprocess_v4
+    )[type](text)
+
 
 
 @dataclass

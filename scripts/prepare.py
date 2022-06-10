@@ -45,7 +45,7 @@ def get_ranks(cell_types, cell_orders, cell_keys):
     return cell_ranks
 
 
-orders_dict, ancestors_dict, tokenizer = None, None, None
+orders_dict, ancestors_dict, tokenizer, processor_suffix = None, None, None, None
 
 
 def process(file):
@@ -89,11 +89,8 @@ def process(file):
 
     cell_encodes = {}
     for cell_key, value in body["source"].items():
-        if cell_types[cell_key] == "code":
-            processor = datasets.code_preprocess
-        else:
-            processor = datasets.markdown_preprocess
-        value = processor(value)
+        processor = getattr(datasets, processor_suffix)
+        value = processor(value, cell_types[cell_key])
         cell_encodes[cell_key] = tokenizer.encode(value, add_special_tokens=False)
 
     sample = Sample(
@@ -121,7 +118,8 @@ def main(
     suffix: str,
     pretrained_tokenizer: str,
 ):
-    global orders_dict, ancestors_dict, tokenizer
+    global orders_dict, ancestors_dict, tokenizer, processor_suffix
+    processor_suffix = f"preprocessor_{suffix}"
     dataset_root = Path("/home/featurize/data")
     ancestors = pd.read_csv(dataset_root / "train_ancestors.csv")
 
@@ -136,8 +134,6 @@ def main(
         orders_dict[item.id] = item.cell_order.split(" ")
 
     tokenizer = AutoTokenizer.from_pretrained(pretrained_tokenizer, do_lower_case=True, use_fast=True)
-
-
 
     with multiprocessing.Pool(processes=8) as pool:
         results = list(
