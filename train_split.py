@@ -30,7 +30,7 @@ def main(
     code: str,
     pretrained_path: str,
     dataset_suffix: str,
-    git_commits: str,
+    git_commit: str,
     lr: int = 3e-5,
     max_epochs: int = 5,
     batch_size: int = 256,
