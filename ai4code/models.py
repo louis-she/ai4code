@@ -6,14 +6,18 @@ import transformers
 
 class Model(nn.Module):
 
-    def __init__(self, pretrained_path, dropout=0.2):
+    def __init__(self, pretrained_path, dropout, with_code_percent_feature):
         super().__init__()
+        self.with_code_percent_feature = with_code_percent_feature
         self.pretrained_path = pretrained_path
         self.backbone = AutoModel.from_pretrained(pretrained_path)
         try:
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
         except:
             out_features_num = 768
+
+        if with_code_percent_feature:
+            out_features_num += 1
 
         self.classifier = nn.Sequential(
             nn.Linear(in_features=out_features_num, out_features=out_features_num),
@@ -26,8 +30,9 @@ class Model(nn.Module):
         output = self.backbone(x, mask)
         x = output[0]  # (bs, seq_len, dim)
         x = x[:, 0] # (bs, dim)
-        # code_percent = cell_numbers[:, 0] / (cell_numbers[:, 0] + cell_numbers[:, 1])
-        # x = torch.cat([x, code_percent.unsqueeze(1)], dim=1) # (bs, dim + 1)
+        if self.with_code_percent_feature:
+            code_percent = cell_numbers[:, 0] / (cell_numbers[:, 0] + cell_numbers[:, 1])
+            x = torch.cat([x, code_percent.unsqueeze(1)], dim=1) # (bs, dim + 1)
         x = self.classifier(x)
         return x
 

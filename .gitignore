@@ -10,4 +10,5 @@ _runs
 *.ipynb
 
 tune.sh
+tune.py
 test.py

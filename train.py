@@ -46,6 +46,7 @@ def main(
     extra_vocab: str = None,
     ordered_context_ratio: float = 0.0,
     validate_with_ordered: bool = False,
+    accumulation_steps: int = 1,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,
@@ -58,6 +59,7 @@ def main(
     dropout: float = 0.2,
     train_all_cells: bool = False,
     english_only: bool = False,
+    with_code_percent_feature: bool = False
 ):
     params = SerializableDict(locals())
     torch.manual_seed(seed)
@@ -139,7 +141,7 @@ def main(
         batch_size=batch_size,
     )
 
-    model = models.Model(pretrained_path, dropout)
+    model = models.Model(pretrained_path, dropout, with_code_percent_feature)
     if extra_vocab:
         model.backbone.resize_token_embeddings(len(tokenizer))
     model.to(DEVICE)
@@ -153,13 +155,15 @@ def main(
         model.train()
         ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:4]]
 
-        optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
             pred = model(ids, mask, cell_numbers)
             loss = criterion(pred, targets)
         scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+
+        if engine.state.iteration % accumulation_steps == 0:
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
         return loss.detach().item()
 
     @torch.no_grad()
