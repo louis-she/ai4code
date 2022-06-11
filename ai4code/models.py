@@ -12,7 +12,10 @@ class Model(nn.Module):
         self.pretrained_path = pretrained_path
         self.backbone = AutoModel.from_pretrained(pretrained_path)
 
-        out_features_num = self.config.dim
+        try:
+            out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
+        except:
+            out_features_num = 768
 
         if with_code_percent_feature:
             out_features_num += 1
@@ -44,7 +47,10 @@ class MultiHeadModel(nn.Module):
         self.config = self.backbone.config
         self.with_casual_ml = with_casual_ml
 
-        out_features_num = self.config.dim
+        try:
+            out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
+        except:
+            out_features_num = 768
 
         self.classifier = nn.Sequential(
             nn.Linear(in_features=out_features_num, out_features=out_features_num),
