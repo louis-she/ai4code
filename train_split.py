@@ -167,16 +167,15 @@ def main(
 
     def train(engine, batch):
         model.train()
-        ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:4]]
+        ids, stride_ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:5]]
+        print(ids.shape, stride_ids.shape)
 
         optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
             in_split, rank, casual_ml_logits = model(ids, mask, cell_numbers)
 
             if with_casual_ml:
-                casual_ml_logits = casual_ml_logits[:, :-1, :].contiguous().view(-1, vocab_len)
-                casual_ml_labels = ids[:, 1:].contiguous().view(-1)
-                lm_loss = F.cross_entropy(casual_ml_logits, casual_ml_labels)
+                lm_loss = F.cross_entropy(casual_ml_logits.view(-1, vocab_len), stride_ids.view(-1))
             else:
                 lm_loss = torch.tensor(0)
 
@@ -192,8 +191,8 @@ def main(
     @torch.no_grad()
     def rank_eval(engine, batch):
         model.eval()
-        ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:4]]
-        sample_ids, cell_keys, split_ids = batch[4:]
+        ids, stride_ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:5]]
+        sample_ids, cell_keys, split_ids = batch[5:]
 
         in_split, rank, _ = model(ids, mask, cell_numbers)
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
