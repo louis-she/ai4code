@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 
 import fire
 import torch
+import torch.nn.functional as F
 from aim.pytorch_ignite import AimLogger
 from ignite.contrib.handlers import ProgressBar
 from ignite.engine import Engine, Events
@@ -50,6 +51,7 @@ def main(
     validate_with_ordered: bool = False,
     split_len: int = 8,
     accumulation_steps: int = 1,
+    with_casual_ml: bool = False,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,
@@ -152,7 +154,7 @@ def main(
         batch_size=batch_size,
     )
 
-    model = models.MultiHeadModel(pretrained_path, dropout)
+    model = models.MultiHeadModel(pretrained_path, with_casual_ml, dropout)
     if extra_vocab:
         model.backbone.resize_token_embeddings(vocab_len)
     model.to(DEVICE)
@@ -169,15 +171,23 @@ def main(
 
         optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank = model(ids, mask, cell_numbers)
+            in_split, rank, casual_ml_logits = model(ids, mask, cell_numbers)
+
+            if with_casual_ml:
+                casual_ml_logits = casual_ml_logits[:, :-1, :].contiguous().view(-1, vocab_len)
+                casual_ml_labels = ids[:, 1:].contiguous().view(-1)
+                lm_loss = F.cross_entropy(casual_ml_logits, casual_ml_labels)
+            else:
+                lm_loss = torch.tensor(0)
+
             cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
             valid_ranks = targets[:, 0] == 1
             rank_loss = rank_criterion(rank[valid_ranks].squeeze(1), targets[valid_ranks, 1])
-            loss = cls_loss + rank_loss
+            loss = cls_loss + rank_loss + lm_loss
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
-        return loss.detach().item(), cls_loss.detach().item(), rank_loss.detach().item()
+        return loss.detach().item(), cls_loss.detach().item(), rank_loss.detach().item(), lm_loss.detach().item()
 
     @torch.no_grad()
     def rank_eval(engine, batch):
@@ -185,7 +195,7 @@ def main(
         ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:4]]
         sample_ids, cell_keys, split_ids = batch[4:]
 
-        in_split, rank = model(ids, mask, cell_numbers)
+        in_split, rank, _ = model(ids, mask, cell_numbers)
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
         valid_ranks = targets[:, 0] == 1
         rank_loss = rank_criterion(rank[valid_ranks].squeeze(1), targets[valid_ranks, 1])
@@ -200,7 +210,8 @@ def main(
     RunningAverage(output_transform=lambda x: x[0]).attach(trainer, "loss")
     RunningAverage(output_transform=lambda x: x[1]).attach(trainer, "cls_loss")
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
-    ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss"])
+    RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
+    ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss", "lm_loss"])
 
     # evaluator plugins
     ProgressBar().attach(evaluator)
