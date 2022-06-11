@@ -168,7 +168,6 @@ def main(
     def train(engine, batch):
         model.train()
         ids, stride_ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:5]]
-        print(ids.shape, stride_ids.shape)
 
         optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
