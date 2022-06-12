@@ -167,7 +167,7 @@ def main(
         try:
             model.load_state_dict(weights)
         except Exception as e:
-            print(colored("fload {load_model} error, try to load with non strict mode, error is: {e}", "yellow"))
+            print(colored(f"fload {load_model} error, try to load with non strict mode, error is: {e}", "yellow"))
             model.load_state_dict(weights, strict=False)
 
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
