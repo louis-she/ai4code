@@ -51,7 +51,7 @@ def main(
     validate_with_ordered: bool = False,
     split_len: int = 8,
     accumulation_steps: int = 1,
-    with_casual_ml: bool = False,
+    with_lm: bool = False,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,
@@ -154,7 +154,7 @@ def main(
         batch_size=batch_size,
     )
 
-    model = models.MultiHeadModel(pretrained_path, with_casual_ml, dropout)
+    model = models.MultiHeadModel(pretrained_path, with_lm, dropout)
     if extra_vocab:
         model.backbone.resize_token_embeddings(vocab_len)
     model.to(DEVICE)
@@ -173,7 +173,7 @@ def main(
         with torch.cuda.amp.autocast(enabled=True):
             in_split, rank, lm_logits = model(ids, mask, cell_numbers)
 
-            if with_casual_ml:
+            if with_lm:
                 lm_loss = F.cross_entropy(lm_logits.view(-1, vocab_len), stride_ids.view(-1))
             else:
                 lm_loss = torch.tensor(0)

@@ -40,12 +40,12 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, with_casual_ml=False, dropout=0.2):
+    def __init__(self, pretrained_path, with_lm=False, dropout=0.2):
         super().__init__()
         self.pretrained_path = pretrained_path
         self.backbone = AutoModel.from_pretrained(pretrained_path)
         self.config = self.backbone.config
-        self.with_casual_ml = with_casual_ml
+        self.with_lm = with_lm
 
         try:
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
@@ -66,7 +66,7 @@ class MultiHeadModel(nn.Module):
             nn.Linear(in_features=out_features_num, out_features=1),
         )
 
-        if self.with_casual_ml:
+        if self.with_lm:
             self.causal_lm = nn.Sequential(
                 nn.Linear(self.config.hidden_size, self.config.hidden_size),
                 nn.GELU(),
@@ -79,7 +79,7 @@ class MultiHeadModel(nn.Module):
         all_seq_features = output[0]  # (bs, seq_len, dim)
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
         # x = torch.cat([x, cell_nums], dim=1) # (bs, dim + 2)
-        return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.causal_lm(all_seq_features) if self.with_casual_ml else None
+        return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.causal_lm(all_seq_features) if self.with_lm else None
 
 
 class CodebertModel(nn.Module):
