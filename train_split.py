@@ -171,10 +171,10 @@ def main(
 
         optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank, casual_ml_logits = model(ids, mask, cell_numbers)
+            in_split, rank, lm_logits = model(ids, mask, cell_numbers)
 
             if with_casual_ml:
-                lm_loss = F.cross_entropy(casual_ml_logits.view(-1, vocab_len), stride_ids.view(-1))
+                lm_loss = F.cross_entropy(lm_logits.view(-1, vocab_len), stride_ids.view(-1))
             else:
                 lm_loss = torch.tensor(0)
 
