@@ -3,6 +3,7 @@ import pickle
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Tuple
+from termcolor import colored
 
 import fire
 import torch
@@ -162,10 +163,12 @@ def main(
 
     if load_model:
         state = torch.load(load_model)
-        if "model" in state:
-            model.load_state_dict(state["model"])
-        else:
-            model.load_state_dict(state)
+        weights = state["model"] if "model" in state else state
+        try:
+            model.load_state_dict(weights)
+        except Exception as e:
+            print(colored("fload {load_model} error, try to load with non strict mode, error is: {e}", "yellow"))
+            model.load_state_dict(weights, strict=False)
 
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
 
@@ -303,7 +306,7 @@ def main(
         engine.state.epoch_length = len(loader)
         engine._setup_dataloader_iter()
 
-    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every))
+    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every) | Events.COMPLETED)
     def _evaluate_loss(engine):
         evaluator.run(val_loader)
 

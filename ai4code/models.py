@@ -67,7 +67,7 @@ class MultiHeadModel(nn.Module):
         )
 
         if self.with_lm:
-            self.causal_lm = nn.Sequential(
+            self.lm = nn.Sequential(
                 nn.Linear(self.config.hidden_size, self.config.hidden_size),
                 nn.GELU(),
                 nn.LayerNorm(self.config.hidden_size),
@@ -79,7 +79,7 @@ class MultiHeadModel(nn.Module):
         all_seq_features = output[0]  # (bs, seq_len, dim)
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
         # x = torch.cat([x, cell_nums], dim=1) # (bs, dim + 2)
-        return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.causal_lm(all_seq_features) if self.with_lm else None
+        return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(all_seq_features) if self.with_lm else None
 
 
 class CodebertModel(nn.Module):
