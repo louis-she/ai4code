@@ -37,6 +37,7 @@ def main(
     batch_size: int = 256,
     seed: int = 777,
     resume: str = None,
+    load_model: str = None,
     override: bool = False,
     optimizer: str = "AdamW",
     testing: bool = False,
@@ -158,6 +159,13 @@ def main(
     if extra_vocab:
         model.backbone.resize_token_embeddings(vocab_len)
     model.to(DEVICE)
+
+    if load_model:
+        state = torch.load(load_model)
+        if "model" in state:
+            model.load_state_dict(state["model"])
+        else:
+            model.load_state_dict(state)
 
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
 
