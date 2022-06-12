@@ -571,7 +571,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         ]
 
         input_ids = [self.special_tokens.cls_token_id] + anchor_encode
-        input_stride_ids = anchor_encode + [self.special_tokens.pad_token_id]
+        input_stride_ids = anchor_encode + [-100]
 
         context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
         context_cell_keys = context_cell_keys[split_id*self.split_len:(split_id+1)*self.split_len]
@@ -608,7 +608,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         input_stride_ids = input_stride_ids[: self.max_len]
         pad_len = self.max_len - len(input_ids)
         input_ids += [self.special_tokens.pad_token_id] * pad_len
-        input_stride_ids += [self.special_tokens.pad_token_id] * pad_len
+        input_stride_ids += [-100] * pad_len
         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
         # start_rank: 1 or 9 or 17 ...
