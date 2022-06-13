@@ -115,29 +115,19 @@ def code_preprocess_v5(code):
 
 
 def preprocessor_v4(text, type):
-    """follow mine mind version : )
-    """
-    return dict(
-        code=code_preprocess_v4,
-        markdown=markdown_preprocess_v4
-    )[type](text)
+    """follow mine mind version : )"""
+    return dict(code=code_preprocess_v4, markdown=markdown_preprocess_v4)[type](text)
 
 
 def preprocessor_v5(text, type):
     """代码仅保留最外层
     掉分！
     """
-    return dict(
-        code=code_preprocess_v5,
-        markdown=markdown_preprocess_v4
-    )[type](text)
+    return dict(code=code_preprocess_v5, markdown=markdown_preprocess_v4)[type](text)
 
 
 def preprocessor_v6(text, type):
-    return dict(
-        code=code_preprocess_v4,
-        markdown=markdown_preprocess_v6
-    )[type](text)
+    return dict(code=code_preprocess_v4, markdown=markdown_preprocess_v6)[type](text)
 
 
 @dataclass
@@ -174,7 +164,7 @@ class RankDataset(torch.utils.data.Dataset):
         ordered_context_ratio,
         shuffle_markdowns=True,
         with_code_cell=False,
-        english_only=False
+        english_only=False,
     ):
         self.read_count = 0
         self.data = data
@@ -201,7 +191,11 @@ class RankDataset(torch.utils.data.Dataset):
 
     def preprocess(self, ids):
         if self.english_only:
-            ids = [input_id for input_id in ids if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id]
+            ids = [
+                input_id
+                for input_id in ids
+                if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id
+            ]
         return ids
 
     def __getitem__(self, index: int):
@@ -224,7 +218,9 @@ class RankDataset(torch.utils.data.Dataset):
         use_ordered_context = random.random() < self.ordered_context_ratio
         if not use_ordered_context:
             # 1. anchor + code cells
-            context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
+            context_cell_keys = [
+                key for key in sample.cell_keys if sample.cell_types[key] == "code"
+            ]
         else:
             # 2. anchor + ordered cells (这里不加 anchor 本身)
             context_cell_keys = [key for key in sample.orders if key != cell_key]
@@ -245,10 +241,22 @@ class RankDataset(torch.utils.data.Dataset):
         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
         label = sample.cell_ranks_normed[cell_key]
 
+        cell_key_ordered_index = sample.orders.index(cell_key)
+        left_edge = (
+            0
+            if cell_key_ordered_index == 0
+            else sample.cell_ranks_normed[cell_key_ordered_index - 1]
+        )
+        right_edge = (
+            1
+            if cell_key_ordered_index == len(sample.orders) - 1
+            else sample.cell_ranks_normed[cell_key_ordered_index + 1]
+        )
+
         return (
             torch.tensor(input_ids).long(),
             torch.tensor(attention_mask).long(),
-            torch.tensor([label]),
+            torch.tensor([label, left_edge, right_edge]),
             torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
             sample_id,
             cell_key,
@@ -436,104 +444,6 @@ class NewDataset(RankDataset):
         return ids, mask, torch.tensor([label]), sample_id, cell_id
 
 
-# class RankDatasetWithSplits(torch.utils.data.Dataset):
-#     def __init__(
-#         self,
-#         data: Dict[str, Sample],
-#         tokenizer: AutoTokenizer,
-#         cell_token_size,
-#         cell_stride,
-#         context_cells_token_size,
-#         context_stride,
-#         max_len,
-#         ordered_context_ratio,
-#         split_len,
-#         shuffle_markdowns=True,
-#         with_code_cell=False,
-#     ):
-#         self.read_count = 0
-#         self.data = data
-#         self.split_len = split_len
-#         self.ordered_context_ratio = ordered_context_ratio
-#         self.context_cells_token_size = context_cells_token_size
-#         self.context_stride = context_stride
-#         self.shuffle_markdowns = shuffle_markdowns
-#         self.cell_token_size = cell_token_size
-#         self.cell_stride = cell_stride
-#         self.max_len = max_len
-#         self.all_cells = []
-
-#         for sample in list(self.data.values()):
-#             for cell_key in sample.cell_keys:
-#                 if sample.cell_types[cell_key] == "markdown":
-#                     self.all_cells.append((sample.id, cell_key))
-
-#         self.tokenizer = tokenizer
-#         self.hash_id = self.tokenizer.encode("#", add_special_tokens=False)[0]
-
-#     def __len__(self):
-#         return len(self.all_cells)
-
-#     def __getitem__(self, index: int):
-#         sample_id, cell_key = self.all_cells[index]
-#         sample = self.data[sample_id]
-
-#         anchor_encode = sample.cell_encodes[cell_key]
-#         # 对于 anchor_encode，不要通过 stride 来过滤 # 字符（token 为 1001）
-#         # 对于不同的 tokenizer 这里
-#         anchor_encode = [
-#             x
-#             for k, x in enumerate(anchor_encode)
-#             if ((k % self.cell_stride) == 0 or x == self.hash_id)
-#             and k < (self.cell_token_size * self.cell_stride)
-#         ]
-
-#         input_ids = [self.tokenizer.cls_token_id] + anchor_encode
-
-#         # 将 context 分为两种，按概率随机选择其中的一种进行训练
-#         use_ordered_context = random.random() < self.ordered_context_ratio
-#         if not use_ordered_context:
-#             # 1. anchor + code cells
-#             context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
-#         else:
-#             # 2. anchor + ordered cells (这里不加 anchor 本身)
-#             context_cell_keys = [key for key in sample.orders if key != cell_key]
-
-#         available_splits_num = math.ceil(len(context_cell_keys) / self.split_len)
-#         split_selected = random.sample(range(available_splits_num), k=1)[0]
-#         context_cell_keys = context_cell_keys[split_selected*self.split_len:(split_selected+1)*self.split_len]
-
-#         for context_cell_key in context_cell_keys:
-#             cell_encode = sample.cell_encodes[context_cell_key]
-#             context_encode = cell_encode[
-#                 0 : self.context_cells_token_size
-#                 * self.context_stride : self.context_stride
-#             ]
-#             input_ids += [self.tokenizer.sep_token_id] + context_encode
-
-#         input_ids += [self.tokenizer.sep_token_id]
-#         input_ids = input_ids[: self.max_len]
-#         pad_len = self.max_len - len(input_ids)
-#         input_ids += [self.tokenizer.pad_token_id] * pad_len
-#         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
-
-#         start_rank = sample.cell_ranks[context_cell_keys[0]]
-
-#         rank = sample.cell_ranks[cell_key] + 1 - start_rank
-#         rank_normed = rank / min(self.split_len, len(context_cell_keys))
-#         in_split = float(rank_normed > 0 and rank_normed < 1)
-
-#         return (
-#             torch.tensor(input_ids).long(),
-#             torch.tensor(attention_mask).long(),
-#             torch.tensor([in_split, rank_normed]),
-#             torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
-#             sample_id,
-#             cell_key,
-#             split_selected
-#         )
-
-
 @dataclass
 class SpecialTokenID:
     hash_id: int
@@ -575,7 +485,9 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
             raise RuntimeError("with stride id only support context id equals to 2")
 
         for sample in list(self.data.values()):
-            context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
+            context_cell_keys = [
+                key for key in sample.cell_keys if sample.cell_types[key] == "code"
+            ]
             available_splits_num = math.ceil(len(context_cell_keys) / self.split_len)
             for split_id in range(available_splits_num):
                 for cell_key in sample.cell_keys:
@@ -603,33 +515,58 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         input_ids = [self.special_tokens.cls_token_id] + anchor_encode
         input_stride_ids = anchor_encode + [-100]
 
-        context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
-        context_cell_keys = context_cell_keys[split_id*self.split_len:(split_id+1)*self.split_len]
+        use_ordered_context = random.random() < self.ordered_context_ratio
+        if not use_ordered_context:
+            # 1. anchor + code cells
+            context_cell_keys = [
+                key for key in sample.cell_keys if sample.cell_types[key] == "code"
+            ]
+        else:
+            # 2. anchor + ordered cells (这里不加 anchor 本身)
+            context_cell_keys = [key for key in sample.orders if key != cell_key]
+
+        context_cell_keys = context_cell_keys[
+            split_id * self.split_len : (split_id + 1) * self.split_len
+        ]
 
         context_encodes = []
         context_stride_encodes = []
         context_lens = []
         for context_cell_key in context_cell_keys:
             cell_encode = sample.cell_encodes[context_cell_key]
-            context_encode = cell_encode[0::self.context_stride]
+            context_encode = cell_encode[0 :: self.context_stride]
 
             # self.context_stride should always be 2 here
-            context_stride_encode = cell_encode[1::self.context_stride]
-            context_stride_encode += [self.special_tokens.pad_token_id] * (len(context_encode) - len(context_stride_encode))
+            context_stride_encode = cell_encode[1 :: self.context_stride]
+            context_stride_encode += [self.special_tokens.pad_token_id] * (
+                len(context_encode) - len(context_stride_encode)
+            )
 
             context_encodes.append(context_encode)
             context_stride_encodes.append(context_stride_encode)
             context_lens.append(len(context_encode))
 
         current_total_length = sum(context_lens)
-        cut_off_number = current_total_length - self.max_len + len(anchor_encode) + self.split_len + 2
+        cut_off_number = (
+            current_total_length
+            - self.max_len
+            + len(anchor_encode)
+            + self.split_len
+            + 2
+        )
         if cut_off_number > 0:
             for _ in range(cut_off_number):
                 max_index = context_lens.index(max(context_lens))
                 context_lens[max_index] -= 1
-        for i, (context_encode, context_len, context_stride_encode) in enumerate(zip(context_encodes, context_lens, context_stride_encodes)):
-            input_ids += [self.special_tokens.sep_token_id] + context_encode[:context_len]
-            input_stride_ids += [self.special_tokens.sep_token_id] + context_stride_encode[:context_len]
+        for i, (context_encode, context_len, context_stride_encode) in enumerate(
+            zip(context_encodes, context_lens, context_stride_encodes)
+        ):
+            input_ids += [self.special_tokens.sep_token_id] + context_encode[
+                :context_len
+            ]
+            input_stride_ids += [
+                self.special_tokens.sep_token_id
+            ] + context_stride_encode[:context_len]
 
         input_ids += [self.special_tokens.sep_token_id]
         input_stride_ids += [self.special_tokens.sep_token_id]
@@ -645,15 +582,22 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         offset = sample.cell_ranks[context_cell_keys[0]]
         rank = sample.cell_ranks[cell_key] + 1 - offset
         rank_normed = rank / (self.split_len + 1)
+        order_idx = sample.orders.index(cell_key)
+        left_edge = 0 if order_idx == 0 else sample.cell_ranks_normed[order_idx - 1]
+        right_edge = (
+            1
+            if order_idx == len(sample.orders) - 1
+            else sample.cell_ranks_normed[order_idx + 1]
+        )
         in_split = float(rank_normed > 0 and rank_normed < 1)
 
         return (
             torch.tensor(input_ids).long(),
             torch.tensor(input_stride_ids).long(),
             torch.tensor(attention_mask).long(),
-            torch.tensor([in_split, rank_normed]),
+            torch.tensor([in_split, rank_normed, left_edge, right_edge]),
             torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
             sample_id,
             cell_key,
-            split_id
+            split_id,
         )

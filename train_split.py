@@ -173,7 +173,7 @@ def main(
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
 
     scaler = torch.cuda.amp.GradScaler()
-    rank_criterion = torch.nn.L1Loss()
+    rank_criterion = torch.nn.L1Loss(reduction="none")
     cls_criterion = torch.nn.BCEWithLogitsLoss()
 
     def train(engine, batch):
@@ -191,7 +191,16 @@ def main(
 
             cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
             valid_ranks = targets[:, 0] == 1
-            rank_loss = rank_criterion(rank[valid_ranks].squeeze(1), targets[valid_ranks, 1])
+
+            valid_targets = targets[valid_ranks]
+            valid_ranks = rank[valid_ranks].squeeze(1)
+
+            rank_in_range = (valid_ranks > valid_targets[:, 2]) & (valid_ranks < valid_targets[:, 3])
+            rank_weights = torch.ones_like(rank_in_range)
+            rank_weights[rank_in_range] *= 0.25
+
+            rank_loss = torch.mean(rank_criterion(valid_ranks, targets[valid_ranks, 1]) * rank_weights)
+
             loss = cls_loss + rank_loss + lm_loss
         scaler.scale(loss).backward()
         scaler.step(optimizer)
