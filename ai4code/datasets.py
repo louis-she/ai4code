@@ -1,6 +1,7 @@
 import ast
 from copy import copy
 import math
+import pickle
 import random
 import numpy as np
 from typing import Dict, List, Optional
@@ -115,29 +116,19 @@ def code_preprocess_v5(code):
 
 
 def preprocessor_v4(text, type):
-    """follow mine mind version : )
-    """
-    return dict(
-        code=code_preprocess_v4,
-        markdown=markdown_preprocess_v4
-    )[type](text)
+    """follow mine mind version : )"""
+    return dict(code=code_preprocess_v4, markdown=markdown_preprocess_v4)[type](text)
 
 
 def preprocessor_v5(text, type):
     """代码仅保留最外层
     掉分！
     """
-    return dict(
-        code=code_preprocess_v5,
-        markdown=markdown_preprocess_v4
-    )[type](text)
+    return dict(code=code_preprocess_v5, markdown=markdown_preprocess_v4)[type](text)
 
 
 def preprocessor_v6(text, type):
-    return dict(
-        code=code_preprocess_v4,
-        markdown=markdown_preprocess_v6
-    )[type](text)
+    return dict(code=code_preprocess_v4, markdown=markdown_preprocess_v6)[type](text)
 
 
 @dataclass
@@ -174,7 +165,7 @@ class RankDataset(torch.utils.data.Dataset):
         ordered_context_ratio,
         shuffle_markdowns=True,
         with_code_cell=False,
-        english_only=False
+        english_only=False,
     ):
         self.read_count = 0
         self.data = data
@@ -201,7 +192,11 @@ class RankDataset(torch.utils.data.Dataset):
 
     def preprocess(self, ids):
         if self.english_only:
-            ids = [input_id for input_id in ids if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id]
+            ids = [
+                input_id
+                for input_id in ids
+                if (input_id >= 1997 and input_id <= 29612) or input_id == self.hash_id
+            ]
         return ids
 
     def __getitem__(self, index: int):
@@ -224,7 +219,9 @@ class RankDataset(torch.utils.data.Dataset):
         use_ordered_context = random.random() < self.ordered_context_ratio
         if not use_ordered_context:
             # 1. anchor + code cells
-            context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
+            context_cell_keys = [
+                key for key in sample.cell_keys if sample.cell_types[key] == "code"
+            ]
         else:
             # 2. anchor + ordered cells (这里不加 anchor 本身)
             context_cell_keys = [key for key in sample.orders if key != cell_key]
@@ -554,6 +551,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         max_len,
         ordered_context_ratio,
         split_len,
+        distil_context,
         shuffle_markdowns=True,
         with_code_cell=False,
         with_stride_id=False,
@@ -570,12 +568,23 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         self.max_len = max_len
         self.all_cells = []
         self.with_stride_id = with_stride_id
+        self.distil_context = distil_context
 
         if self.with_stride_id and self.context_stride != 2:
             raise RuntimeError("with stride id only support context id equals to 2")
 
+        if self.distil_context:
+            self.context_cells_keys = pickle.load(open(self.distil_context, "rb"))
+        else:
+            self.context_cells_keys = {
+                sample.id: [
+                    key for key in sample.cell_keys if sample.cell_types[key] == "code"
+                ]
+                for sample in self.data.values()
+            }
+
         for sample in list(self.data.values()):
-            context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
+            context_cell_keys = self.context_cells_keys[sample.id]
             available_splits_num = math.ceil(len(context_cell_keys) / self.split_len)
             for split_id in range(available_splits_num):
                 for cell_key in sample.cell_keys:
@@ -603,33 +612,49 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         input_ids = [self.special_tokens.cls_token_id] + anchor_encode
         input_stride_ids = anchor_encode + [-100]
 
-        context_cell_keys = [key for key in sample.cell_keys if sample.cell_types[key] == "code"]
-        context_cell_keys = context_cell_keys[split_id*self.split_len:(split_id+1)*self.split_len]
+        context_cell_keys = self.context_cells_keys[sample.id]
+        context_cell_keys = context_cell_keys[
+            split_id * self.split_len : (split_id + 1) * self.split_len
+        ]
 
         context_encodes = []
         context_stride_encodes = []
         context_lens = []
         for context_cell_key in context_cell_keys:
             cell_encode = sample.cell_encodes[context_cell_key]
-            context_encode = cell_encode[0::self.context_stride]
+            context_encode = cell_encode[0 :: self.context_stride]
 
             # self.context_stride should always be 2 here
-            context_stride_encode = cell_encode[1::self.context_stride]
-            context_stride_encode += [self.special_tokens.pad_token_id] * (len(context_encode) - len(context_stride_encode))
+            context_stride_encode = cell_encode[1 :: self.context_stride]
+            context_stride_encode += [self.special_tokens.pad_token_id] * (
+                len(context_encode) - len(context_stride_encode)
+            )
 
             context_encodes.append(context_encode)
             context_stride_encodes.append(context_stride_encode)
             context_lens.append(len(context_encode))
 
         current_total_length = sum(context_lens)
-        cut_off_number = current_total_length - self.max_len + len(anchor_encode) + self.split_len + 2
+        cut_off_number = (
+            current_total_length
+            - self.max_len
+            + len(anchor_encode)
+            + self.split_len
+            + 2
+        )
         if cut_off_number > 0:
             for _ in range(cut_off_number):
                 max_index = context_lens.index(max(context_lens))
                 context_lens[max_index] -= 1
-        for i, (context_encode, context_len, context_stride_encode) in enumerate(zip(context_encodes, context_lens, context_stride_encodes)):
-            input_ids += [self.special_tokens.sep_token_id] + context_encode[:context_len]
-            input_stride_ids += [self.special_tokens.sep_token_id] + context_stride_encode[:context_len]
+        for i, (context_encode, context_len, context_stride_encode) in enumerate(
+            zip(context_encodes, context_lens, context_stride_encodes)
+        ):
+            input_ids += [self.special_tokens.sep_token_id] + context_encode[
+                :context_len
+            ]
+            input_stride_ids += [
+                self.special_tokens.sep_token_id
+            ] + context_stride_encode[:context_len]
 
         input_ids += [self.special_tokens.sep_token_id]
         input_stride_ids += [self.special_tokens.sep_token_id]
@@ -655,5 +680,5 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
             torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
             sample_id,
             cell_key,
-            split_id
+            split_id,
         )

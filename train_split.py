@@ -65,6 +65,7 @@ def main(
     val_num_samples: int = None,
     dropout: float = 0.2,
     train_all_cells: bool = False,
+    distil_context: str = None,
 ):
     params = SerializableDict(locals())
     torch.manual_seed(seed)
@@ -126,6 +127,7 @@ def main(
             max_len=max_len,
             ordered_context_ratio=ordered_context_ratio,
             split_len=split_len,
+            distil_context=distil_context,
         )
 
     def get_next_loader():
