@@ -582,12 +582,18 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         offset = sample.cell_ranks[context_cell_keys[0]]
         rank = sample.cell_ranks[cell_key] + 1 - offset
         rank_normed = rank / (self.split_len + 1)
+
         order_idx = sample.orders.index(cell_key)
-        left_edge = 0 if order_idx == 0 else sample.cell_ranks_normed[order_idx - 1]
+
+        left_edge = (
+            0
+            if order_idx == 0
+            else sample.cell_ranks_normed[sample.orders[order_idx - 1]]
+        )
         right_edge = (
             1
             if order_idx == len(sample.orders) - 1
-            else sample.cell_ranks_normed[order_idx + 1]
+            else sample.cell_ranks_normed[sample.orders[order_idx + 1]]
         )
         in_split = float(rank_normed > 0 and rank_normed < 1)
 
