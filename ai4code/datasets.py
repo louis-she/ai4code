@@ -10,6 +10,8 @@ from markdown import markdown
 from tokenizers import Tokenizer
 import torch
 from operator import itemgetter
+import tokenize
+import io
 from transformers import (
     AutoTokenizer,
     DistilBertTokenizer,
@@ -115,6 +117,17 @@ def code_preprocess_v5(code):
     return code_preprocess_v4("\n".join(outputs))
 
 
+def code_preprocess_v6(code):
+    """Tokenizer
+    """
+    try:
+        code_text = tokenize.generate_tokens(io.StringIO(code).readline)
+        return ' '.join([tok.string for tok in code_text if tok.type==1 or tok.type==55])
+    except:
+        # 有可能会失败，失败的话 fallback 到 code_preprocess_v4
+        return code_preprocess_v4(code)
+
+
 def preprocessor_v4(text, type):
     """follow mine mind version : )"""
     return dict(code=code_preprocess_v4, markdown=markdown_preprocess_v4)[type](text)
@@ -129,6 +142,10 @@ def preprocessor_v5(text, type):
 
 def preprocessor_v6(text, type):
     return dict(code=code_preprocess_v4, markdown=markdown_preprocess_v6)[type](text)
+
+
+def preprocessor_v7(text, type):
+    return dict(code=code_preprocess_v6, markdown=markdown_preprocess_v6)[type](text)
 
 
 @dataclass
