@@ -71,6 +71,13 @@ def code_preprocess_v4(code):
     return code
 
 
+def code_preprocess_v7(code):
+    # code 最小修改
+    code = links_to_word(code)
+    code = lemmatize(code)
+    return code
+
+
 def markdown_preprocess_v4(code):
     code = links_to_word(code)
     code = no_markdown_special(code)
@@ -146,6 +153,10 @@ def preprocessor_v6(text, type):
 
 def preprocessor_v7(text, type):
     return dict(code=code_preprocess_v6, markdown=markdown_preprocess_v6)[type](text)
+
+
+def preprocessor_v8(text, type):
+    return dict(code=code_preprocess_v7, markdown=markdown_preprocess_v6)[type](text)
 
 
 @dataclass
