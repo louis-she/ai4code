@@ -102,7 +102,7 @@ def main(
         tokenizer.add_tokens(x[0] for x in extra_vocab.most_common(2000))
 
     special_tokens = datasets.SpecialTokenID(
-        hash_id=tokenizer.encode("#", add_special_tokens=False)[0],
+        hash_id=tokenizer.encode("#", add_special_tokens=False)[0]
         new_line_id=tokenizer.encode("\n", add_special_tokens=False)[0]
         cls_token_id=tokenizer.cls_token_id,
         sep_token_id=tokenizer.sep_token_id,
