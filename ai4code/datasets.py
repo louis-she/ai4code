@@ -563,10 +563,10 @@ class NewDataset(RankDataset):
 @dataclass
 class SpecialTokenID:
     hash_id: int
-    new_line_id: int
     cls_token_id: int
     sep_token_id: int
     pad_token_id: int
+    unk_token_id: int
 
 
 class RankDatasetWithSplits(torch.utils.data.Dataset):
@@ -691,7 +691,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         ) in enumerate(
             zip(context_encodes, context_lens, context_stride_encodes, context_types)
         ):
-            sep_token = self.special_tokens.sep_token_id if cell_type == "code" else self.special_tokens.new_line_id
+            sep_token = self.special_tokens.sep_token_id if cell_type == "code" else self.special_tokens.unk_token_id
             input_ids += context_encode[:context_len] + [sep_token]
             input_stride_ids += context_stride_encode[:context_len] + [sep_token]
 
