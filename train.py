@@ -171,8 +171,9 @@ def main(
         model.eval()
         ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:4]]
         sample_ids, cell_keys = batch[4:]
-        scores = model(ids, mask, cell_numbers)
-        loss = criterion(scores, targets).item()
+        with torch.cuda.amp.autocast(enabled=True):
+            scores = model(ids, mask, cell_numbers)
+            loss = criterion(scores, targets).item()
         return loss, scores, sample_ids, cell_keys
 
     trainer = Engine(train)
