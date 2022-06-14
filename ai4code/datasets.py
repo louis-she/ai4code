@@ -125,11 +125,12 @@ def code_preprocess_v5(code):
 
 
 def code_preprocess_v6(code):
-    """Tokenizer
-    """
+    """Tokenizer"""
     try:
         code_text = tokenize.generate_tokens(io.StringIO(code).readline)
-        return ' '.join([tok.string for tok in code_text if tok.type==1 or tok.type==55])
+        return " ".join(
+            [tok.string for tok in code_text if tok.type == 1 or tok.type == 55]
+        )
     except:
         # 有可能会失败，失败的话 fallback 到 code_preprocess_v4
         return code_preprocess_v4(code)
@@ -562,6 +563,7 @@ class NewDataset(RankDataset):
 @dataclass
 class SpecialTokenID:
     hash_id: int
+    new_line_id: int
     cls_token_id: int
     sep_token_id: int
     pad_token_id: int
@@ -637,8 +639,12 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
             and k < (self.cell_token_size * self.cell_stride)
         ]
 
-        input_ids = [self.special_tokens.cls_token_id] + anchor_encode
-        input_stride_ids = anchor_encode + [-100]
+        input_ids = (
+            [self.special_tokens.cls_token_id]
+            + anchor_encode
+            + [self.special_tokens.sep_token_id]
+        )
+        input_stride_ids = anchor_encode + [-100] + [self.special_tokens.sep_token_id]
 
         context_cell_keys = self.context_cells_keys[sample.id]
         context_cell_keys = context_cell_keys[
@@ -648,8 +654,10 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         context_encodes = []
         context_stride_encodes = []
         context_lens = []
+        context_types = []
         for context_cell_key in context_cell_keys:
             cell_encode = sample.cell_encodes[context_cell_key]
+            cell_type = sample.cell_types[context_cell_key]
             context_encode = cell_encode[0 :: self.context_stride]
 
             # self.context_stride should always be 2 here
@@ -661,6 +669,7 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
             context_encodes.append(context_encode)
             context_stride_encodes.append(context_stride_encode)
             context_lens.append(len(context_encode))
+            context_types.append(cell_type)
 
         current_total_length = sum(context_lens)
         cut_off_number = (
@@ -674,18 +683,17 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
             for _ in range(cut_off_number):
                 max_index = context_lens.index(max(context_lens))
                 context_lens[max_index] -= 1
-        for i, (context_encode, context_len, context_stride_encode) in enumerate(
-            zip(context_encodes, context_lens, context_stride_encodes)
+        for i, (
+            context_encode,
+            context_len,
+            context_stride_encode,
+            cell_type,
+        ) in enumerate(
+            zip(context_encodes, context_lens, context_stride_encodes, context_types)
         ):
-            input_ids += [self.special_tokens.sep_token_id] + context_encode[
-                :context_len
-            ]
-            input_stride_ids += [
-                self.special_tokens.sep_token_id
-            ] + context_stride_encode[:context_len]
-
-        input_ids += [self.special_tokens.sep_token_id]
-        input_stride_ids += [self.special_tokens.sep_token_id]
+            sep_token = self.special_tokens.sep_token_id if cell_type == "code" else self.special_tokens.new_line_id
+            input_ids += context_encode[:context_len] + [sep_token]
+            input_stride_ids += context_stride_encode[:context_len] + [sep_token]
 
         input_ids = input_ids[: self.max_len]
         input_stride_ids = input_stride_ids[: self.max_len]
