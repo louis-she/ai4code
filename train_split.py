@@ -238,17 +238,11 @@ def main(
                 pair_lm_input_ids = pair_lm_input_ids.to(DEVICE)
                 pair_lm_mask_ids = pair_lm_mask_ids.to(DEVICE)
 
-                pair_lm_input_ids, pair_lm_labels = (
-                    pair_lm_input_ids[:-1],
-                    pair_lm_input_ids[1:],
-                )
-                pair_lm_mask_ids = pair_lm_mask_ids[:-1]
-
                 pair_lm_logits = model(
                     pair_lm_input_ids.cuda(), pair_lm_mask_ids.cuda(), True
                 )
                 pair_lm_loss = F.cross_entropy(
-                    pair_lm_logits.view(-1, vocab_len), pair_lm_labels.view(-1)
+                    pair_lm_logits[:-1].view(-1, vocab_len), pair_lm_input_ids[1:].view(-1)
                 )
                 scaler.scale(pair_lm_loss).backward()
             else:
