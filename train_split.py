@@ -68,9 +68,13 @@ def main(
     dropout: float = 0.2,
     train_all_cells: bool = False,
     distil_context: str = None,
+    tokenizer_pretrained_path: str = None,
 ):
     params = SerializableDict(locals())
     torch.manual_seed(seed)
+
+    if tokenizer_pretrained_path is None:
+        tokenizer_pretrained_path = pretrained_path
 
     max_epochs = max_epochs * len(train_folds)
 
@@ -98,7 +102,7 @@ def main(
         val_data = {k: v for k, v in list(val_data.items())[:val_num_samples]}
 
     tokenizer = AutoTokenizer.from_pretrained(
-        pretrained_path, do_lower_case=True, use_fast=True
+        tokenizer_pretrained_path, do_lower_case=True, use_fast=True
     )
     vocab_len = len(tokenizer)
 
