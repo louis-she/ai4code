@@ -21,12 +21,13 @@ from transformers import AdamW, AutoTokenizer
 from ai4code import datasets, metrics, models
 from ai4code.utils import SerializableDict
 
-torch.multiprocessing.set_sharing_strategy('file_system')
+torch.multiprocessing.set_sharing_strategy("file_system")
 
-os.environ['TOKENIZERS_PARALLELISM'] = "false"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 LOG_DIR = Path("/home/featurize/ai4code")
 DEVICE = torch.device("cuda")
+
 
 def main(
     code: str,
@@ -54,13 +55,14 @@ def main(
     split_len: int = 8,
     accumulation_steps: int = 1,
     with_lm: bool = False,
+    pair_lm: bool = False,
     # dataset temp
     negative_ratio: float = 0.5,
     cell_token_size: int = 64,
     cell_stride: int = 1,
     context_cells_token_size: int = 23,
     context_stride: int = 1,
-    max_len: int = 512,
+    max_len: int = 256,
     train_num_samples: int = None,
     val_num_samples: int = None,
     dropout: float = 0.2,
@@ -85,7 +87,10 @@ def main(
         )
 
     data: Dict[str, datasets.Sample] = pickle.load(
-        open(f"/home/featurize/work/ai4code/data/10fold{'_mini' if testing else ''}.{dataset_suffix}.pkl", "rb")
+        open(
+            f"/home/featurize/work/ai4code/data/10fold{'_mini' if testing else ''}.{dataset_suffix}.pkl",
+            "rb",
+        )
     )
 
     val_data = {k: v for k, v in list(data.items()) if v.fold in val_folds}
@@ -146,18 +151,33 @@ def main(
 
         current_train_fold_idx += 1
 
-        return DataLoader(
+        task_loader = DataLoader(
             create_dataset(train_data, ordered_context_ratio=ordered_context_ratio),
             num_workers=num_workers,
             batch_size=batch_size,
             shuffle=True,
         )
 
+        return task_loader
+
     val_loader = DataLoader(
-        create_dataset(val_data, ordered_context_ratio=1 if validate_with_ordered else 0),
+        create_dataset(
+            val_data, ordered_context_ratio=1 if validate_with_ordered else 0
+        ),
         num_workers=num_workers,
         batch_size=batch_size,
     )
+
+    all_train_data = {k: v for k, v in list(data.items()) if v.fold not in val_folds}
+    pair_lm_loader = DataLoader(
+        datasets.PairLMDataset(all_train_data, special_tokens, max_len),
+        num_workers=num_workers,
+        batch_size=batch_size,
+        shuffle=True,
+    )
+
+    if pair_lm:
+        pair_lm_loader_iter = iter(pair_lm_loader)
 
     model = models.MultiHeadModel(pretrained_path, with_lm, dropout)
     if extra_vocab:
@@ -170,7 +190,12 @@ def main(
         try:
             model.load_state_dict(weights)
         except Exception as e:
-            print(colored(f"fload {load_model} error, try to load with non strict mode, error is: {e}", "yellow"))
+            print(
+                colored(
+                    f"fload {load_model} error, try to load with non strict mode, error is: {e}",
+                    "yellow",
+                )
+            )
             model.load_state_dict(weights, strict=False)
 
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
@@ -180,37 +205,82 @@ def main(
     cls_criterion = torch.nn.BCEWithLogitsLoss()
 
     def train(engine, batch):
+        nonlocal pair_lm_loader_iter
         model.train()
-        ids, stride_ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:5]]
+        ids, stride_ids, mask, targets, cell_numbers = [
+            item.to(DEVICE) for item in batch[:5]
+        ]
 
-        optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank, lm_logits = model(ids, mask, cell_numbers)
-
+            in_split, rank, lm_logits = model(ids, mask)
             if with_lm:
-                lm_loss = F.cross_entropy(lm_logits.view(-1, vocab_len), stride_ids.view(-1))
+                lm_loss = F.cross_entropy(
+                    lm_logits.view(-1, vocab_len), stride_ids.view(-1)
+                )
             else:
                 lm_loss = torch.tensor(0)
 
             cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
             valid_ranks = targets[:, 0] == 1
-            rank_loss = rank_criterion(rank[valid_ranks].squeeze(1), targets[valid_ranks, 1])
+            rank_loss = rank_criterion(
+                rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
+            )
             loss = cls_loss + rank_loss + lm_loss
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        return loss.detach().item(), cls_loss.detach().item(), rank_loss.detach().item(), lm_loss.detach().item()
+            scaler.scale(loss).backward()
+
+            if pair_lm:
+                try:
+                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader_iter)
+                except StopIteration:
+                    pair_lm_loader_iter = iter(pair_lm_loader)
+                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader_iter)
+
+                pair_lm_input_ids = pair_lm_input_ids.to(DEVICE)
+                pair_lm_mask_ids = pair_lm_mask_ids.to(DEVICE)
+
+                pair_lm_input_ids, pair_lm_labels = (
+                    pair_lm_input_ids[:-1],
+                    pair_lm_input_ids[1:],
+                )
+                pair_lm_mask_ids = pair_lm_mask_ids[:-1]
+
+                pair_lm_logits = model(
+                    pair_lm_input_ids.cuda(), pair_lm_mask_ids.cuda(), True
+                )
+                pair_lm_loss = F.cross_entropy(
+                    pair_lm_logits.view(-1, vocab_len), pair_lm_labels.view(-1)
+                )
+                scaler.scale(pair_lm_loss).backward()
+            else:
+                pair_lm_loss = torch.tensor(0)
+
+            if engine.state.iteration % accumulation_steps == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+
+        return (
+            loss.detach().item(),
+            cls_loss.detach().item(),
+            rank_loss.detach().item(),
+            lm_loss.detach().item(),
+            pair_lm_loss.detach().item(),
+        )
 
     @torch.no_grad()
     def rank_eval(engine, batch):
         model.eval()
-        ids, stride_ids, mask, targets, cell_numbers = [item.to(DEVICE) for item in batch[:5]]
+        ids, stride_ids, mask, targets, cell_numbers = [
+            item.to(DEVICE) for item in batch[:5]
+        ]
         sample_ids, cell_keys, split_ids = batch[5:]
 
-        in_split, rank, _ = model(ids, mask, cell_numbers)
+        in_split, rank, _ = model(ids, mask)
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
         valid_ranks = targets[:, 0] == 1
-        rank_loss = rank_criterion(rank[valid_ranks].squeeze(1), targets[valid_ranks, 1])
+        rank_loss = rank_criterion(
+            rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
+        )
         loss = cls_loss + rank_loss
 
         return loss, in_split, rank, sample_ids, cell_keys, split_ids
@@ -223,7 +293,8 @@ def main(
     RunningAverage(output_transform=lambda x: x[1]).attach(trainer, "cls_loss")
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
     RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
-    ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss", "lm_loss"])
+    RunningAverage(output_transform=lambda x: x[4]).attach(trainer, "pair_lm_loss")
+    ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss", "lm_loss", "pair_lm_loss"])
 
     # evaluator plugins
     ProgressBar().attach(evaluator)
@@ -284,7 +355,7 @@ def main(
         "model": model,
         "optimizer": optimizer,
         "scaler": scaler,
-        "params": params
+        "params": params,
     }
 
     if with_scheduler:

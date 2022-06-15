@@ -74,11 +74,13 @@ class MultiHeadModel(nn.Module):
                 nn.Linear(self.config.hidden_size, self.config.vocab_size),
             )
 
-    def forward(self, x, mask, cell_nums):
+    def forward(self, x, mask, lm_only=False):
         output = self.backbone(x, mask)
         all_seq_features = output[0]  # (bs, seq_len, dim)
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
         # x = torch.cat([x, cell_nums], dim=1) # (bs, dim + 2)
+        if lm_only:
+            return self.lm(all_seq_features)
         return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(all_seq_features) if self.with_lm else None
 
 
