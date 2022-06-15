@@ -226,9 +226,12 @@ def main(
 
             cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
             valid_ranks = targets[:, 0] == 1
-            rank_loss = rank_criterion(
-                rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
-            )
+            if valid_ranks.sum().item() == 0:
+                rank_loss = torch.tensor(0)
+            else:
+                rank_loss = rank_criterion(
+                    rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
+                )
             loss = cls_loss + rank_loss + lm_loss
             scaler.scale(loss).backward()
 
