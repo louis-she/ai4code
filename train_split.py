@@ -26,6 +26,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 LOG_DIR = Path("/home/featurize/ai4code")
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 def main(
     code: str,
@@ -133,7 +136,8 @@ def main(
         # 把 Loader 改为下一个 Fold
         nonlocal current_train_fold_idx
         fold = train_folds[current_train_fold_idx % len(train_folds)]
-        print(colored(f"generate loader of fold {fold}", "green"))
+        if rank == 0:
+            print(colored(f"generate loader of fold {fold}", "green"))
         train_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb"))
         if train_num_samples is not None:
             train_data = {k: v for k, v in list(train_data.items())[:train_num_samples]}
