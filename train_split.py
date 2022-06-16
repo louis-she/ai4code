@@ -21,6 +21,9 @@ from transformers import AdamW, AutoTokenizer
 from ai4code import datasets, metrics, models
 from ai4code.utils import SerializableDict
 import ignite.distributed as idist
+from transformers import logging
+
+logging.set_verbosity_error()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
