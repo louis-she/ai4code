@@ -158,10 +158,10 @@ def main(
             if sample.ancestor in val_ancestors:
                 all_data[id].fold = fold
 
-    pickle.dump(all_data, open(f"/home/featurize/work/ai4code/data/10fold.{suffix}.pkl", "wb"))
-
-    fold0 = {k: v for k, v in all_data.items() if v.fold == 0}
-    pickle.dump(fold0, open(f"/home/featurize/work/ai4code/data/fold0.{suffix}.pkl", "wb"))
+    os.makedirs(f"/home/featurize/work/ai4code/data/{suffix}", exist_ok=True)
+    for i in range(10):
+        fold_data = {k: v for k, v in list(all_data.items()) if v.fold == i}
+        pickle.dump(fold_data, open(f"/home/featurize/work/ai4code/data/{suffix}/{i}.pkl", "wb"))
 
     mini_data = {}
     for fold in range(10):
@@ -172,7 +172,7 @@ def main(
     assert len(mini_data) == 1000
     assert len([sample for sample in mini_data.values() if sample.fold == 0]) == 100
 
-    pickle.dump(mini_data, open(f"/home/featurize/work/ai4code/data/10fold_mini.{suffix}.pkl", "wb"))
+    pickle.dump(mini_data, open(f"/home/featurize/work/ai4code/data/{suffix}/mini.{suffix}.pkl", "wb"))
 
 
 if __name__ == "__main__":

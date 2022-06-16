@@ -580,7 +580,6 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         context_cells_token_size,
         context_stride,
         max_len,
-        ordered_context_ratio,
         split_len,
         distil_context,
         shuffle_markdowns=True,
@@ -590,7 +589,6 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
         self.read_count = 0
         self.data = data
         self.split_len = split_len
-        self.ordered_context_ratio = ordered_context_ratio
         self.context_cells_token_size = context_cells_token_size
         self.context_stride = context_stride
         self.shuffle_markdowns = shuffle_markdowns

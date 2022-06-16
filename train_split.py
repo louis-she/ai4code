@@ -20,13 +20,11 @@ from transformers import AdamW, AutoTokenizer
 
 from ai4code import datasets, metrics, models
 from ai4code.utils import SerializableDict
-
-torch.multiprocessing.set_sharing_strategy("file_system")
+import ignite.distributed as idist
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 LOG_DIR = Path("/home/featurize/ai4code")
-DEVICE = torch.device("cuda")
 
 
 def main(
@@ -49,7 +47,6 @@ def main(
     val_folds: Tuple[int] = (0,),
     evaluate_every: int = 1,
     with_scheduler: bool = True,
-    extra_vocab: str = None,
     ordered_context_ratio: float = 0.0,
     validate_with_ordered: bool = False,
     split_len: int = 8,
@@ -72,6 +69,8 @@ def main(
 ):
     params = SerializableDict(locals())
     torch.manual_seed(seed)
+    device = idist.device()
+    rank = idist.get_local_rank()
 
     if tokenizer_pretrained_path is None:
         tokenizer_pretrained_path = pretrained_path
@@ -79,8 +78,8 @@ def main(
     max_epochs = max_epochs * len(train_folds)
 
     if testing:
-        train_num_samples = 10
-        val_num_samples = 10
+        train_num_samples = 100
+        val_num_samples = 100
         code = "test_" + code
         override = True
 
@@ -90,14 +89,7 @@ def main(
             f"Code dir {code_dir} exists! use --override to force override it or change another code name"
         )
 
-    data: Dict[str, datasets.Sample] = pickle.load(
-        open(
-            f"/home/featurize/work/ai4code/data/10fold{'_mini' if testing else ''}.{dataset_suffix}.pkl",
-            "rb",
-        )
-    )
-
-    val_data = {k: v for k, v in list(data.items()) if v.fold in val_folds}
+    val_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/0.pkl", "rb"))
     if val_num_samples is not None:
         val_data = {k: v for k, v in list(val_data.items())[:val_num_samples]}
 
@@ -105,10 +97,6 @@ def main(
         tokenizer_pretrained_path, do_lower_case=True, use_fast=True
     )
     vocab_len = len(tokenizer)
-
-    if extra_vocab:
-        extra_vocab: Counter = pickle.load(open(extra_vocab, "rb"))
-        tokenizer.add_tokens(x[0] for x in extra_vocab.most_common(2000))
 
     special_tokens = datasets.SpecialTokenID(
         hash_id=tokenizer.encode("#", add_special_tokens=False)[0],
@@ -121,12 +109,14 @@ def main(
     del tokenizer
 
     current_train_fold_idx = 0
+    current_lm_fold_idx = 0
 
     def reset_fold_idx():
-        nonlocal current_train_fold_idx
+        nonlocal current_train_fold_idx, current_lm_fold_idx
         current_train_fold_idx = 0
+        current_lm_fold_idx = 0
 
-    def create_dataset(data, ordered_context_ratio):
+    def create_dataset(data):
         return datasets.RankDatasetWithSplits(
             data,
             special_tokens=special_tokens,
@@ -135,7 +125,6 @@ def main(
             context_cells_token_size=context_cells_token_size,
             context_stride=context_stride,
             max_len=max_len,
-            ordered_context_ratio=ordered_context_ratio,
             split_len=split_len,
             distil_context=distil_context,
         )
@@ -145,51 +134,44 @@ def main(
         # 因此一轮表示单个 Fold 的训练，每次训练完毕后手动
         # 把 Loader 改为下一个 Fold
         nonlocal current_train_fold_idx
-        train_data = {
-            k: v
-            for k, v in list(data.items())
-            if v.fold == int(train_folds[current_train_fold_idx % len(train_folds)])
-        }
+        fold = train_folds[current_train_fold_idx % len(train_folds)]
+        print(colored(f"generate loader of fold {fold}", "green"))
+        train_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb"))
         if train_num_samples is not None:
             train_data = {k: v for k, v in list(train_data.items())[:train_num_samples]}
 
         current_train_fold_idx += 1
 
-        task_loader = DataLoader(
-            create_dataset(train_data, ordered_context_ratio=ordered_context_ratio),
-            num_workers=num_workers,
+        return idist.auto_dataloader(
+            create_dataset(train_data),
             batch_size=batch_size,
             shuffle=True,
         )
 
-        return task_loader
+    def get_next_lm_loader():
+        nonlocal current_lm_fold_idx
+        fold = train_folds[current_train_fold_idx % len(train_folds)]
+        lm_train_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb"))
+        current_lm_fold_idx += 1
 
-    val_loader = DataLoader(
-        create_dataset(
-            val_data, ordered_context_ratio=1 if validate_with_ordered else 0
-        ),
+        return iter(idist.auto_dataloader(
+            datasets.PairLMDataset(lm_train_data, special_tokens, max_len),
+            batch_size=batch_size,
+            shuffle=True,
+        ))
+
+    val_loader = idist.auto_dataloader(
+        create_dataset(val_data),
         num_workers=num_workers,
         batch_size=batch_size,
-    )
-
-    all_train_data = {k: v for k, v in list(data.items()) if v.fold not in val_folds}
-    pair_lm_loader = DataLoader(
-        datasets.PairLMDataset(all_train_data, special_tokens, max_len),
-        num_workers=num_workers,
-        batch_size=batch_size,
-        shuffle=True,
     )
 
     if pair_lm:
-        pair_lm_loader_iter = iter(pair_lm_loader)
+        pair_lm_loader = get_next_lm_loader()
 
     model = models.MultiHeadModel(pretrained_path, with_lm, dropout)
-    if extra_vocab:
-        model.backbone.resize_token_embeddings(vocab_len)
-    model.to(DEVICE)
-
     if load_model:
-        state = torch.load(load_model)
+        state = torch.load(load_model, map_location="cpu")
         weights = state["model"] if "model" in state else state
         try:
             model.load_state_dict(weights)
@@ -202,17 +184,20 @@ def main(
             )
             model.load_state_dict(weights, strict=False)
 
+    model = idist.auto_model(model)
+
     optimizer = getattr(optim, optimizer)(model.parameters(), lr=lr)
+    optimizer = idist.auto_optim(optimizer)
 
     scaler = torch.cuda.amp.GradScaler()
-    rank_criterion = torch.nn.L1Loss()
-    cls_criterion = torch.nn.BCEWithLogitsLoss()
+    rank_criterion = torch.nn.L1Loss().to(device)
+    cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
     def train(engine, batch):
-        nonlocal pair_lm_loader_iter
+        nonlocal pair_lm_loader
         model.train()
         ids, stride_ids, mask, targets, cell_numbers = [
-            item.to(DEVICE) for item in batch[:5]
+            item.to(device) for item in batch[:5]
         ]
 
         with torch.cuda.amp.autocast(enabled=True):
@@ -227,7 +212,7 @@ def main(
             cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
             valid_ranks = targets[:, 0] == 1
             if valid_ranks.sum().item() == 0:
-                rank_loss = torch.tensor(0)
+                rank_loss = rank_criterion(rank[0:1].squeeze(1), targets[0:1, 1])
             else:
                 rank_loss = rank_criterion(
                     rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
@@ -237,16 +222,16 @@ def main(
 
             if pair_lm:
                 try:
-                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader_iter)
+                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader)
                 except StopIteration:
-                    pair_lm_loader_iter = iter(pair_lm_loader)
-                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader_iter)
+                    pair_lm_loader = get_next_lm_loader()
+                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader)
 
-                pair_lm_input_ids = pair_lm_input_ids.to(DEVICE)
-                pair_lm_mask_ids = pair_lm_mask_ids.to(DEVICE)
+                pair_lm_input_ids = pair_lm_input_ids.to(device)
+                pair_lm_mask_ids = pair_lm_mask_ids.to(device)
 
                 pair_lm_logits = model(
-                    pair_lm_input_ids.cuda(), pair_lm_mask_ids.cuda(), True
+                    pair_lm_input_ids, pair_lm_mask_ids, True
                 )
                 pair_lm_loss = F.cross_entropy(
                     pair_lm_logits[:-1].view(-1, vocab_len), pair_lm_input_ids[1:].view(-1)
@@ -272,7 +257,7 @@ def main(
     def rank_eval(engine, batch):
         model.eval()
         ids, stride_ids, mask, targets, cell_numbers = [
-            item.to(DEVICE) for item in batch[:5]
+            item.to(device) for item in batch[:5]
         ]
         sample_ids, cell_keys, split_ids = batch[5:]
 
@@ -290,46 +275,17 @@ def main(
     evaluator = Engine(rank_eval)
 
     # trainer plugins
+    # if rank == 0:
     RunningAverage(output_transform=lambda x: x[0]).attach(trainer, "loss")
     RunningAverage(output_transform=lambda x: x[1]).attach(trainer, "cls_loss")
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
     RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
     RunningAverage(output_transform=lambda x: x[4]).attach(trainer, "pair_lm_loss")
-    ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss", "lm_loss", "pair_lm_loss"])
+    if rank == 0:
+        ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss", "lm_loss", "pair_lm_loss"])
+        ProgressBar().attach(evaluator)
 
-    # evaluator plugins
-    ProgressBar().attach(evaluator)
     metrics.KendallTauWithSplits(val_data, split_len).attach(evaluator, "kendall_tau")
-
-    # aim
-    aim_logger = AimLogger(
-        # repo="aim://172.16.190.45:53800",
-        repo=os.path.join(LOG_DIR / "aim"),
-        experiment=code,
-    )
-    aim_logger.log_params(params.state_dict())
-
-    aim_logger.attach_output_handler(
-        trainer,
-        event_name=Events.ITERATION_COMPLETED,
-        tag="train",
-        output_transform=lambda x: x[0],
-    )
-    aim_logger.attach_output_handler(
-        evaluator,
-        event_name=Events.ITERATION_COMPLETED,
-        tag="val",
-        output_transform=lambda x: x[0],
-    )
-    aim_logger.attach_output_handler(
-        evaluator,
-        event_name=Events.EPOCH_COMPLETED,
-        tag="val",
-        metric_names=["kendall_tau"],
-        global_step_transform=global_step_from_engine(
-            trainer, Events.ITERATION_COMPLETED
-        ),
-    )
 
     # scheduler
     if with_scheduler:
@@ -346,9 +302,6 @@ def main(
         @trainer.on(Events.ITERATION_COMPLETED)
         def step_scheduler(engine):
             scheduler.step()
-            aim_logger.log_metrics(
-                {"lr": scheduler.get_last_lr()[0]}, step=engine.state.iteration
-            )
 
     # checkpoint
     objects_to_checkpoint = {
@@ -369,10 +322,14 @@ def main(
         score_name="kendall_tau",
         global_step_transform=lambda *_: trainer.state.epoch,
     )
-    if not testing and saving_checkpoint:
+    if rank == 0 and not testing and saving_checkpoint:
         evaluator.add_event_handler(Events.EPOCH_COMPLETED, checkpoint)
     if resume:
         Checkpoint.load_objects(objects_to_checkpoint, torch.load(resume))
+
+    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every) | Events.COMPLETED)
+    def _evaluate_loss(engine):
+        evaluator.run(val_loader)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _replace_dataloader(engine):
@@ -381,17 +338,19 @@ def main(
         engine.state.epoch_length = len(loader)
         engine._setup_dataloader_iter()
 
-    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every) | Events.COMPLETED)
-    def _evaluate_loss(engine):
-        evaluator.run(val_loader)
-
     @trainer.on(Events.EPOCH_COMPLETED)
     def _testing_quit(engine):
         if testing:
             exit(0)
 
     trainer.run(get_next_loader(), max_epochs=max_epochs)
+    idist.finalize()
 
+
+def spawn(local_rank):
+    fire.Fire(main)
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    with idist.Parallel(backend="nccl") as parallel:
+        parallel.run(spawn)
+

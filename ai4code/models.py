@@ -43,7 +43,7 @@ class MultiHeadModel(nn.Module):
     def __init__(self, pretrained_path, with_lm=False, dropout=0.2):
         super().__init__()
         self.pretrained_path = pretrained_path
-        self.backbone = AutoModel.from_pretrained(pretrained_path)
+        self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False)
         self.config = self.backbone.config
         self.with_lm = with_lm
 

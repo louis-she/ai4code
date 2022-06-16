@@ -3,6 +3,8 @@ from collections import defaultdict
 import pickle
 from typing import Dict
 from ignite.metrics import Metric
+import ignite.distributed as idist
+import torch.distributed as dist
 
 from ai4code.datasets import Sample
 
@@ -103,17 +105,29 @@ class KendallTauWithSplits(Metric):
         self.reset()
 
     def reset(self):
-        self._predictions = defaultdict(lambda: defaultdict(dict))
+        # self._predictions = defaultdict(lambda: defaultdict(dict))
         self._all_predictions = []
         self._all_targets = []
         self._submission_data = {}
+        self._predictions = []
 
     def update(self, output):
         loss, in_splits, ranks, sample_ids, cell_ids, split_ids = output
         for in_split, rank, sample_id, cell_id, split_id in zip(in_splits, ranks, sample_ids, cell_ids, split_ids):
-            self._predictions[sample_id][cell_id][split_id] = [in_split.item(), rank.item(), sample_id, split_id.item()]
+            # self._predictions[sample_id][cell_id][split_id] = [in_split.item(), rank.item(), sample_id, split_id.item()]
+            self._predictions.append([in_split.item(), rank.item(), sample_id, cell_id, split_id.item()])
 
     def compute(self):
+        all_predictions = [None for _ in range(idist.get_world_size())]
+        dist.all_gather_object(all_predictions, self._predictions)
+
+        all_predictions_dict = defaultdict(lambda: defaultdict(dict))
+        for in_split, rank, sample_id, cell_id, split_id in [x for xs in all_predictions for x in xs]:
+            all_predictions_dict[sample_id][cell_id][split_id] = [in_split, rank, sample_id, split_id]
+
+        if idist.get_local_rank() != 0:
+            return
+
         for sample in self.val_data.values():
             all_preds = []
             for cell_key in sample.cell_keys:
@@ -124,8 +138,8 @@ class KendallTauWithSplits(Metric):
                     item = (cell_key, cell_rank)
                 else:
                     # markdown cell，选出 in_split 得分最高的，取 rank + split_offset
-                    item = (cell_key, self._predictions[sample.id][cell_key])
-                    split_results = self._predictions[sample.id][cell_key]
+                    item = (cell_key, all_predictions_dict[sample.id][cell_key])
+                    split_results = all_predictions_dict[sample.id][cell_key]
 
                     max_in_split_score = -float('inf')
                     in_split_result = None
