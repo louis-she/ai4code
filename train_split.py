@@ -9,7 +9,6 @@ import fire
 import torch
 import torch.nn.functional as F
 from aim.pytorch_ignite import AimLogger
-from ignite.contrib.handlers import ProgressBar
 from ignite.engine import Engine, Events
 from ignite.handlers import Checkpoint, DiskSaver, global_step_from_engine
 from ignite.metrics import RunningAverage
@@ -30,6 +29,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 LOG_DIR = Path("/home/featurize/ai4code")
 
 import warnings
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
@@ -94,7 +94,9 @@ def main(
             f"Code dir {code_dir} exists! use --override to force override it or change another code name"
         )
 
-    val_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/0.pkl", "rb"))
+    val_data = pickle.load(
+        open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/0.pkl", "rb")
+    )
     if val_num_samples is not None:
         val_data = {k: v for k, v in list(val_data.items())[:val_num_samples]}
 
@@ -141,7 +143,9 @@ def main(
         fold = train_folds[current_train_fold_idx % len(train_folds)]
         if rank == 0:
             print(colored(f"generate loader of fold {fold}", "green"))
-        train_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb"))
+        train_data = pickle.load(
+            open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb")
+        )
         if train_num_samples is not None:
             train_data = {k: v for k, v in list(train_data.items())[:train_num_samples]}
 
@@ -156,14 +160,18 @@ def main(
     def get_next_lm_loader():
         nonlocal current_lm_fold_idx
         fold = train_folds[current_train_fold_idx % len(train_folds)]
-        lm_train_data = pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb"))
+        lm_train_data = pickle.load(
+            open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb")
+        )
         current_lm_fold_idx += 1
 
-        return iter(idist.auto_dataloader(
-            datasets.PairLMDataset(lm_train_data, special_tokens, max_len),
-            batch_size=batch_size,
-            shuffle=True,
-        ))
+        return iter(
+            idist.auto_dataloader(
+                datasets.PairLMDataset(lm_train_data, special_tokens, max_len),
+                batch_size=batch_size,
+                shuffle=True,
+            )
+        )
 
     val_loader = idist.auto_dataloader(
         create_dataset(val_data),
@@ -235,11 +243,10 @@ def main(
                 pair_lm_input_ids = pair_lm_input_ids.to(device)
                 pair_lm_mask_ids = pair_lm_mask_ids.to(device)
 
-                pair_lm_logits = model(
-                    pair_lm_input_ids, pair_lm_mask_ids, True
-                )
+                pair_lm_logits = model(pair_lm_input_ids, pair_lm_mask_ids, True)
                 pair_lm_loss = F.cross_entropy(
-                    pair_lm_logits[:-1].view(-1, vocab_len), pair_lm_input_ids[1:].view(-1)
+                    pair_lm_logits[:-1].view(-1, vocab_len),
+                    pair_lm_input_ids[1:].view(-1),
                 )
                 scaler.scale(pair_lm_loss).backward()
             else:
@@ -287,8 +294,21 @@ def main(
     RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
     RunningAverage(output_transform=lambda x: x[4]).attach(trainer, "pair_lm_loss")
     if rank == 0:
-        ProgressBar().attach(trainer, ["loss", "cls_loss", "rank_loss", "lm_loss", "pair_lm_loss"])
-        ProgressBar().attach(evaluator)
+
+        @trainer.on(Events.ITERATION_COMPLETED(every=50))
+        def _print_progress(engine):
+            print(
+                "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\tpair_lm_loss: {:10.4f}"
+            ).format(
+                engine.state.iteration % engine.state.epoch_length,
+                engine.state.epoch_length,
+                engine.state.epoch,
+                engine.state.metrics["loss"],
+                engine.state.metrics["cls_loss"],
+                engine.state.metrics["rank_loss"],
+                engine.state.metrics["lm_loss"],
+                engine.state.metrics["pair_lm_loss"],
+            )
 
     metrics.KendallTauWithSplits(val_data, split_len).attach(evaluator, "kendall_tau")
 
@@ -360,7 +380,7 @@ def main(
 def spawn(local_rank):
     fire.Fire(main)
 
+
 if __name__ == "__main__":
     with idist.Parallel(backend="nccl") as parallel:
         parallel.run(spawn)
-
