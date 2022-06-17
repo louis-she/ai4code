@@ -299,7 +299,7 @@ def main(
         def _print_progress(engine):
             print(
                 "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\tpair_lm_loss: {:10.4f}"
-            ).format(
+            .format(
                 engine.state.iteration % engine.state.epoch_length,
                 engine.state.epoch_length,
                 engine.state.epoch,
@@ -308,7 +308,7 @@ def main(
                 engine.state.metrics["rank_loss"],
                 engine.state.metrics["lm_loss"],
                 engine.state.metrics["pair_lm_loss"],
-            )
+            ))
 
     metrics.KendallTauWithSplits(val_data, split_len).attach(evaluator, "kendall_tau")
 
