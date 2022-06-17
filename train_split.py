@@ -332,9 +332,14 @@ def main(
     if resume:
         Checkpoint.load_objects(objects_to_checkpoint, torch.load(resume))
 
-    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every) | Events.COMPLETED)
-    def _evaluate_loss(engine):
+    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every))
+    def _evaluate_loss(engine: Engine):
         evaluator.run(val_loader)
+
+    @trainer.on(Events.COMPLETED)
+    def _evaluate_loss(engine: Engine):
+        if engine.state.epoch % evaluate_every != 0:
+            evaluator.run(val_loader)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _replace_dataloader(engine):
