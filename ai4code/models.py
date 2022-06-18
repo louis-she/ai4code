@@ -69,13 +69,12 @@ class MultiHeadModel(nn.Module):
             nn.Linear(in_features=out_features_num, out_features=1),
         )
 
-        if self.with_lm:
-            self.lm = nn.Sequential(
-                nn.Linear(self.config.hidden_size, self.config.hidden_size),
-                nn.GELU(),
-                nn.LayerNorm(self.config.hidden_size),
-                nn.Linear(self.config.hidden_size, self.config.vocab_size),
-            )
+        self.lm = nn.Sequential(
+            nn.Linear(self.config.hidden_size, self.config.hidden_size),
+            nn.GELU(),
+            nn.LayerNorm(self.config.hidden_size),
+            nn.Linear(self.config.hidden_size, self.config.vocab_size),
+        )
 
     def forward(self, x, mask, lm_only=False):
         output = self.backbone(x, mask)
