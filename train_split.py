@@ -180,7 +180,7 @@ def main(
     )
 
     if pair_lm:
-        pair_lm_loader = get_next_lm_loader()
+        lm_loader = get_next_lm_loader()
 
     model = models.MultiHeadModel(pretrained_path, pair_lm, dropout)
     if load_model:
@@ -207,7 +207,7 @@ def main(
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
     def train(engine, batch):
-        nonlocal pair_lm_loader
+        nonlocal lm_loader
         model.train()
         ids, stride_ids, mask, targets, cell_numbers = [
             item.to(device) for item in batch[:5]
@@ -283,13 +283,12 @@ def main(
     RunningAverage(output_transform=lambda x: x[1]).attach(trainer, "cls_loss")
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
     RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
-    RunningAverage(output_transform=lambda x: x[4]).attach(trainer, "pair_lm_loss")
     if rank == 0:
 
         @trainer.on(Events.ITERATION_COMPLETED(every=50))
         def _print_progress(engine):
             print(
-                "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\tpair_lm_loss: {:10.4f}"
+                "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\t"
             .format(
                 engine.state.iteration % engine.state.epoch_length,
                 engine.state.epoch_length,
@@ -298,7 +297,6 @@ def main(
                 engine.state.metrics["cls_loss"],
                 engine.state.metrics["rank_loss"],
                 engine.state.metrics["lm_loss"],
-                engine.state.metrics["pair_lm_loss"],
             ))
 
     metrics.KendallTauWithSplits(val_data, split_len).attach(evaluator, "kendall_tau")
