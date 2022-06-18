@@ -680,7 +680,7 @@ class PairLMDataset(torch.utils.data.Dataset):
         return (
             torch.tensor(input_ids).long(),
             torch.tensor(mask).long(),
-            torch.tensor(positive).long(),
+            torch.tensor([positive]).long(),
         )
 
     def __len__(self):
