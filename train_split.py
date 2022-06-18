@@ -182,7 +182,7 @@ def main(
     if pair_lm:
         pair_lm_loader = get_next_lm_loader()
 
-    model = models.MultiHeadModel(pretrained_path, with_lm, dropout)
+    model = models.MultiHeadModel(pretrained_path, pair_lm, dropout)
     if load_model:
         state = torch.load(load_model, map_location="cpu")
         weights = state["model"] if "model" in state else state

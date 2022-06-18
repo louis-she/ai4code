@@ -69,21 +69,21 @@ class MultiHeadModel(nn.Module):
             nn.Linear(in_features=out_features_num, out_features=1),
         )
 
-        self.lm = nn.Sequential(
-            nn.Linear(self.config.hidden_size, self.config.hidden_size),
-            nn.GELU(),
-            nn.LayerNorm(self.config.hidden_size),
-            nn.Linear(self.config.hidden_size, self.config.vocab_size),
-        )
+        if with_lm:
+            self.lm = nn.Sequential(
+                nn.Linear(self.config.hidden_size, self.config.hidden_size),
+                nn.GELU(),
+                nn.LayerNorm(self.config.hidden_size),
+                nn.Linear(self.config.hidden_size, 1),
+            )
 
-    def forward(self, x, mask, lm_only=False):
+    def forward(self, x, mask, lm=False):
         output = self.backbone(x, mask)
         all_seq_features = output[0]  # (bs, seq_len, dim)
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
-        # x = torch.cat([x, cell_nums], dim=1) # (bs, dim + 2)
-        if lm_only:
-            return self.lm(all_seq_features)
-        return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(all_seq_features) if self.with_lm else None
+        if lm:
+            return self.lm(last_seq_feature)
+        return self.classifier(last_seq_feature), self.ranker(last_seq_feature)
 
 
 class CodebertModel(nn.Module):
