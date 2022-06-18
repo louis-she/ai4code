@@ -231,27 +231,26 @@ def main(
                     rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
                 )
             loss = cls_loss + rank_loss + lm_loss
-            scaler.scale(loss).backward()
 
             if pair_lm:
                 try:
-                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader)
+                    pair_lm_input_ids, pair_lm_mask_ids, pair_lm_labels = next(pair_lm_loader)
                 except StopIteration:
                     pair_lm_loader = get_next_lm_loader()
-                    pair_lm_input_ids, pair_lm_mask_ids = next(pair_lm_loader)
+                    pair_lm_input_ids, pair_lm_mask_ids, pair_lm_labels = next(pair_lm_loader)
 
                 pair_lm_input_ids = pair_lm_input_ids.to(device)
                 pair_lm_mask_ids = pair_lm_mask_ids.to(device)
+                pair_lm_labels = pair_lm_labels.to(device)
 
                 pair_lm_logits = model(pair_lm_input_ids, pair_lm_mask_ids, True)
-                pair_lm_loss = F.cross_entropy(
-                    pair_lm_logits[:-1].view(-1, vocab_len),
-                    pair_lm_input_ids[1:].view(-1),
-                )
-                scaler.scale(pair_lm_loss).backward()
+                pair_lm_loss = F.binary_cross_entropy_with_logits(pair_lm_logits, pair_lm_labels)
+
+                loss += pair_lm_loss
             else:
                 pair_lm_loss = torch.tensor(0)
 
+            scaler.scale(loss).backward()
             if engine.state.iteration % accumulation_steps == 0:
                 scaler.step(optimizer)
                 scaler.update()

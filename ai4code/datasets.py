@@ -624,36 +624,64 @@ class RankDatasetWithSplits(torch.utils.data.Dataset):
 
 
 class PairLMDataset(torch.utils.data.Dataset):
-    def __init__(self, data: Dict[str, Sample], special_tokens: SpecialTokenID, max_len: int):
+    def __init__(
+        self, data: Dict[str, Sample], special_tokens: SpecialTokenID, max_len: int
+    ):
         super().__init__()
         self.data = data
         self.special_tokens = special_tokens
         self.max_len = max_len
         self.all_cell_pairs = []
         for sample in list(self.data.values()):
-            for cell_key, next_cell_key in zip(sample.orders[:-1], sample.orders[1:]):
-                self.all_cell_pairs.append((sample.id, cell_key, next_cell_key))
+            for cell_key, next_cell_key, previous_cell_key in zip(
+                sample.orders[1:-1], sample.orders[2:], sample.orders[:-2]
+            ):
+                self.all_cell_pairs.append(
+                    (sample.id, cell_key, next_cell_key, previous_cell_key)
+                )
 
     def __getitem__(self, index):
-        sample_id, anchor_key, next_key = self.all_cell_pairs[index]
+        sample_id, anchor_key, next_key, previous_key = self.all_cell_pairs[index]
         sample = self.data[sample_id]
+
         anchor_encode = sample.cell_encodes[anchor_key]
-        next_encode = sample.cell_encodes[next_key]
-        (anchor_encode, next_encode), _ = utils.adjust_sequences(
-            [anchor_encode, next_encode], self.max_len - 3
+        positive = random.random() > 0.5
+        if positive:
+            previous_encode = sample.cell_encodes[previous_key]
+            next_encode = sample.cell_encodes[next_key]
+        else:
+            previous_encode, next_encode = random.sample(
+                [
+                    sample.cell_encodes[x]
+                    for x in sample.cell_keys
+                    if x not in [anchor_key, next_key, previous_key]
+                ],
+                k=2,
+            )
+
+        (previous_encode, anchor_encode, next_encode), _ = utils.adjust_sequences(
+            [previous_encode, anchor_encode, next_encode], self.max_len - 4
         )
 
         input_ids = (
             [self.special_tokens.cls_token_id]
+            + previous_encode
+            + [self.special_tokens.sep_token_id]
             + anchor_encode
             + [self.special_tokens.sep_token_id]
             + next_encode
             + [self.special_tokens.sep_token_id]
         )
 
-        input_ids += (self.max_len - len(input_ids)) * [self.special_tokens.pad_token_id]
+        input_ids += (self.max_len - len(input_ids)) * [
+            self.special_tokens.pad_token_id
+        ]
         mask = [1] * len(input_ids) + [0] * (self.max_len - len(input_ids))
-        return torch.tensor(input_ids).long(), torch.tensor(mask).long()
+        return (
+            torch.tensor(input_ids).long(),
+            torch.tensor(mask).long(),
+            torch.tensor(positive).long(),
+        )
 
     def __len__(self):
         return len(self.all_cell_pairs)
