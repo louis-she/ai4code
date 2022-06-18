@@ -214,14 +214,7 @@ def main(
         ]
 
         with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank, lm_logits = model(ids, mask)
-            if with_lm:
-                lm_loss = F.cross_entropy(
-                    lm_logits.view(-1, vocab_len), stride_ids.view(-1)
-                )
-            else:
-                lm_loss = torch.tensor(0)
-
+            in_split, rank = model(ids, mask)
             cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
             valid_ranks = targets[:, 0] == 1
             if valid_ranks.sum().item() == 0:
@@ -230,25 +223,25 @@ def main(
                 rank_loss = rank_criterion(
                     rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
                 )
-            loss = cls_loss + rank_loss + lm_loss
+            loss = cls_loss + rank_loss
 
             if pair_lm:
                 try:
-                    pair_lm_input_ids, pair_lm_mask_ids, pair_lm_labels = next(pair_lm_loader)
+                    lm_input_ids, lm_mask_ids, lm_labels = next(lm_loader)
                 except StopIteration:
-                    pair_lm_loader = get_next_lm_loader()
-                    pair_lm_input_ids, pair_lm_mask_ids, pair_lm_labels = next(pair_lm_loader)
+                    lm_loader = get_next_lm_loader()
+                    lm_input_ids, lm_mask_ids, lm_labels = next(lm_loader)
 
-                pair_lm_input_ids = pair_lm_input_ids.to(device)
-                pair_lm_mask_ids = pair_lm_mask_ids.to(device)
-                pair_lm_labels = pair_lm_labels.to(device)
+                lm_input_ids = lm_input_ids.to(device)
+                lm_mask_ids = lm_mask_ids.to(device)
+                lm_labels = lm_labels.to(device)
 
-                pair_lm_logits = model(pair_lm_input_ids, pair_lm_mask_ids, True)
-                pair_lm_loss = F.binary_cross_entropy_with_logits(pair_lm_logits, pair_lm_labels)
+                lm_logits = model(lm_input_ids, lm_mask_ids, True)
+                lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_labels)
 
-                loss += pair_lm_loss
+                loss += lm_loss
             else:
-                pair_lm_loss = torch.tensor(0)
+                lm_loss = torch.tensor(0)
 
             scaler.scale(loss).backward()
             if engine.state.iteration % accumulation_steps == 0:
@@ -261,7 +254,6 @@ def main(
             cls_loss.detach().item(),
             rank_loss.detach().item(),
             lm_loss.detach().item(),
-            pair_lm_loss.detach().item(),
         )
 
     @torch.no_grad()
