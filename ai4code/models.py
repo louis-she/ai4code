@@ -77,11 +77,14 @@ class MultiHeadModel(nn.Module):
                 nn.Linear(self.config.hidden_size, 1),
             )
 
-    def forward(self, x, mask, lm=False):
+    def forward(self, x, mask, lm=True):
         output = self.backbone(x, mask)
         all_seq_features = output[0]  # (bs, seq_len, dim)
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
-        return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(last_seq_feature)
+        if lm:
+            return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(last_seq_feature)
+        else:
+            return self.classifier(last_seq_feature), self.ranker(last_seq_feature)
 
 
 class CodebertModel(nn.Module):

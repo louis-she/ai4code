@@ -123,7 +123,7 @@ def main(
         current_train_fold_idx = 0
         current_lm_fold_idx = 0
 
-    def create_dataset(data):
+    def create_dataset(data, only_task_data=False):
         return datasets.MixedDatasetWithSplits(
             data,
             special_tokens=special_tokens,
@@ -131,6 +131,7 @@ def main(
             max_len=max_len,
             split_len=split_len,
             distil_context=distil_context,
+            only_task_data=only_task_data
         )
 
     def get_next_loader():
@@ -172,7 +173,7 @@ def main(
         )
 
     val_loader = idist.auto_dataloader(
-        create_dataset(val_data),
+        create_dataset(val_data, only_task_data=True),
         num_workers=num_workers,
         batch_size=batch_size,
     )
@@ -257,12 +258,10 @@ def main(
     @torch.no_grad()
     def rank_eval(engine, batch):
         model.eval()
-        ids, stride_ids, mask, targets, cell_numbers = [
-            item.to(device) for item in batch[:5]
-        ]
-        sample_ids, cell_keys, split_ids = batch[5:]
+        input_ids, mask, targets = [item.to(device) for item in batch[:3]]
+        sample_ids, cell_keys, split_ids = batch[3:]
 
-        in_split, rank, _ = model(ids, mask)
+        in_split, rank = model(input_ids, mask, lm=False)
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
         valid_ranks = targets[:, 0] == 1
         rank_loss = rank_criterion(

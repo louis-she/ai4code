@@ -697,8 +697,10 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         split_len,
         distil_context,
         shuffle_markdowns=True,
+        only_task_data=False,
     ):
         self.read_count = 0
+        self.only_task_data = only_task_data
         self.data = data
         self.split_len = split_len
         self.anchor_size = anchor_size
@@ -851,5 +853,8 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
 
     def __getitem__(self, index: int):
         input_ids, mask, targets, _, sample_id, cell_key, split_id  = self.get_task_data(index)
-        lm_input_ids, lm_mask, lm_targets = self.get_pair_data(index)
-        return input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, sample_id, cell_key, split_id
+        if not self.only_task_data:
+            lm_input_ids, lm_mask, lm_targets = self.get_pair_data(index)
+            return input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, sample_id, cell_key, split_id
+        return input_ids, mask, targets, sample_id, cell_key, split_id
+
