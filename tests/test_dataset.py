@@ -1,33 +1,39 @@
 import pickle
 from tqdm import tqdm
 from torch.utils.data import DataLoader
+from ai4code import datasets
 
 from transformers import AutoModel, AutoTokenizer, DistilBertTokenizer
-from ai4code.datasets import RankDataset, LongFormerDataset
+from ai4code.datasets import MixedDatasetWithSplits, RankDataset, LongFormerDataset
 import time
 
-fold4 = pickle.load(open("data/all_dict_data_4fold_mini.pkl", "rb"))
+data = pickle.load(open("/home/featurize/work/ai4code/data/v8/mini.v8.pkl", "rb"))
 
 
 def test_dataset_getitem():
-    fold10 = pickle.load(open("/home/featurize/work/ai4code/data/all_dict_data_10fold_mini.pkl", "rb"))
-    dataset = RankDataset(
-        fold10,
-        tokenizer=DistilBertTokenizer.from_pretrained(
-            "/home/featurize/distilbert-base-uncased/distilbert-base-uncased",
-            do_lower_case=True,
-            use_fast=True
-        ),
-        cell_token_size=64,
-        cell_stride=1,
-        context_cells_token_size=14,
-        context_stride=2,
-        max_len=512,
+    tokenizer = DistilBertTokenizer.from_pretrained(
+        "/home/featurize/distilbert-base-uncased/distilbert-base-uncased",
+        do_lower_case=True,
+        use_fast=True
     )
-    res = dataset[0]
-    # loader = DataLoader(dataset, num_workers=8, batch_size=32, shuffle=True)
-    # for _ in tqdm(loader):
-    #     continue
+    special_tokens = datasets.SpecialTokenID(
+        hash_id=tokenizer.encode("#", add_special_tokens=False)[0],
+        cls_token_id=tokenizer.cls_token_id,
+        sep_token_id=tokenizer.sep_token_id,
+        pad_token_id=tokenizer.pad_token_id,
+        unk_token_id=tokenizer.unk_token_id,
+    )
+
+    dataset = MixedDatasetWithSplits(
+        data,
+        special_tokens=special_tokens,
+        anchor_size=64,
+        split_len=10,
+        max_len=256,
+        distil_context=None,
+    )
+
+    input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, sample_id, cell_key, split_id = dataset[0]
 
     assert True
 

@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 from transformers import AdamW, AutoTokenizer
 
-from ai4code import datasets, metrics, models
+from ai4code import datasets, metrics, models, utils
 from ai4code.utils import SerializableDict
 import ignite.distributed as idist
 from transformers import logging
@@ -61,7 +61,7 @@ def main(
     pair_lm: bool = False,
     # dataset temp
     negative_ratio: float = 0.5,
-    cell_token_size: int = 64,
+    anchor_size: int = 64,
     cell_stride: int = 1,
     context_stride: int = 1,
     max_len: int = 256,
@@ -124,12 +124,10 @@ def main(
         current_lm_fold_idx = 0
 
     def create_dataset(data):
-        return datasets.RankDatasetWithSplits(
+        return datasets.MixedDatasetWithSplits(
             data,
             special_tokens=special_tokens,
-            cell_token_size=cell_token_size,
-            cell_stride=cell_stride,
-            context_stride=context_stride,
+            anchor_size=anchor_size,
             max_len=max_len,
             split_len=split_len,
             distil_context=distil_context,
@@ -209,13 +207,29 @@ def main(
     def train(engine, batch):
         nonlocal lm_loader
         model.train()
-        ids, stride_ids, mask, targets, cell_numbers = [
-            item.to(device) for item in batch[:5]
+        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
+            item.to(device) for item in batch[:6]
         ]
 
+        real_bs = input_ids.shape[0]
+        # input_ids, mask, lm_input_ids, lm_mask: bs x 256
+        input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
+        mask = torch.cat([mask, lm_mask], dim=0)
+        assert input_ids.shape[0] == mask.shape[0]
+
+        shuffle_indices, unshuffle_indices = utils.shuffle_batch(input_ids)
+        input_ids = input_ids[shuffle_indices]
+        mask = mask[shuffle_indices]
+
         with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank = model(ids, mask)
-            cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
+            in_split, rank, lm_logits = model(input_ids, mask)
+
+            in_split = in_split[unshuffle_indices][:real_bs]
+            rank = rank[unshuffle_indices][:real_bs]
+            lm_logits = lm_logits[unshuffle_indices][real_bs:]
+
+            split_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
+
             valid_ranks = targets[:, 0] == 1
             if valid_ranks.sum().item() == 0:
                 rank_loss = rank_criterion(rank[0:1].squeeze(1), targets[0:1, 1])
@@ -223,25 +237,9 @@ def main(
                 rank_loss = rank_criterion(
                     rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
                 )
-            loss = cls_loss + rank_loss
 
-            if pair_lm:
-                try:
-                    lm_input_ids, lm_mask_ids, lm_labels = next(lm_loader)
-                except StopIteration:
-                    lm_loader = get_next_lm_loader()
-                    lm_input_ids, lm_mask_ids, lm_labels = next(lm_loader)
-
-                lm_input_ids = lm_input_ids.to(device)
-                lm_mask_ids = lm_mask_ids.to(device)
-                lm_labels = lm_labels.to(device)
-
-                lm_logits = model(lm_input_ids, lm_mask_ids, True)
-                lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_labels)
-
-                loss += lm_loss
-            else:
-                lm_loss = torch.tensor(0)
+            lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_targets)
+            loss = split_loss + rank_loss + lm_loss
 
             scaler.scale(loss).backward()
             if engine.state.iteration % accumulation_steps == 0:
@@ -251,7 +249,7 @@ def main(
 
         return (
             loss.detach().item(),
-            cls_loss.detach().item(),
+            split_loss.detach().item(),
             rank_loss.detach().item(),
             lm_loss.detach().item(),
         )
