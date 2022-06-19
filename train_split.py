@@ -129,9 +129,6 @@ def main(
         )
 
     def get_next_loader():
-        # 由于内存原因，每个 DataLoader 只能遍历单个 Fold
-        # 因此一轮表示单个 Fold 的训练，每次训练完毕后手动
-        # 把 Loader 改为下一个 Fold
         nonlocal current_train_fold_idx
         fold = train_folds[current_train_fold_idx % len(train_folds)]
         if rank == 0:
