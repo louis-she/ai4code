@@ -53,22 +53,16 @@ def main(
     val_folds: Tuple[int] = (0,),
     evaluate_every: int = 1,
     with_scheduler: bool = True,
-    ordered_context_ratio: float = 0.0,
-    validate_with_ordered: bool = False,
     split_len: int = 8,
     accumulation_steps: int = 1,
-    with_lm: bool = False,
     pair_lm: bool = False,
     # dataset temp
-    negative_ratio: float = 0.5,
+
     anchor_size: int = 64,
-    cell_stride: int = 1,
-    context_stride: int = 1,
     max_len: int = 256,
     train_num_samples: int = None,
     val_num_samples: int = None,
     dropout: float = 0.2,
-    train_all_cells: bool = False,
     distil_context: str = None,
     tokenizer_pretrained_path: str = None,
 ):
