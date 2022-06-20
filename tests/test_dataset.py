@@ -99,7 +99,9 @@ def test_mixed_dataset():
     assert len(dataset) == (sample.markdown_cell_count * split_len)
 
     input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, sample_id, cell_key, split_id = dataset[1]
-    print(input_ids)
+    for i in range(1000):
+        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, sample_id, cell_key, split_id = dataset[i]
+        print(lm_targets)
 
 
 def test_dataset_getitem():

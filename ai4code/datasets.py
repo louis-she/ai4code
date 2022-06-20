@@ -824,6 +824,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
                 )
             except ValueError:
                 # fallback to positive
+                positive = True
                 previous_encode = sample.cell_encodes[previous_key]
                 next_encode = sample.cell_encodes[next_key]
 
