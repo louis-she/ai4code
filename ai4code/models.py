@@ -80,7 +80,7 @@ class MultiHeadModel(nn.Module):
 
         if with_lstm:
             self.lstm_1 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
-            self.lstm_2 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
+            # self.lstm_2 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
 
     def forward(self, x, mask, lm=True):
         output = self.backbone(x, mask)
@@ -88,7 +88,7 @@ class MultiHeadModel(nn.Module):
 
         if self.with_lstm:
             all_seq_features, _ = self.lstm_1(all_seq_features)
-            all_seq_features, _ = self.lstm_2(all_seq_features)
+            # all_seq_features, _ = self.lstm_2(all_seq_features)
 
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
         if lm and self.with_lm:
