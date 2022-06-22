@@ -155,14 +155,3 @@ def print_params(params: Dict[str, str]):
     for key, value in params.items():
         print(str(key).ljust(max_key_len + 2, " "), "=>", value)
     print('----------------------------------------------------------------------------------------------')
-
-
-def reload(git_commit):
-    ai4code_path = f"/home/featurize/work/ai4code/_runs/{git_commit}"
-    if not os.path.exists(ai4code_path):
-        print(colored("ai4code path not exists, quit", "red"))
-        exit(1)
-    else:
-        print(colored(f"use ai4code at {ai4code_path}", "green"))
-        sys.path.insert(0, ai4code_path)
-        importlib.reload(ai4code)
