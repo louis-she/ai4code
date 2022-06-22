@@ -40,7 +40,7 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, with_lm=False, dropout=0.2):
+    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False):
         super().__init__()
         self.pretrained_path = pretrained_path
         try:
@@ -49,6 +49,7 @@ class MultiHeadModel(nn.Module):
             self.backbone = AutoModel.from_pretrained(pretrained_path)
         self.config = self.backbone.config
         self.with_lm = with_lm
+        self.with_lstm = with_lstm
 
         try:
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
@@ -77,9 +78,18 @@ class MultiHeadModel(nn.Module):
                 nn.Linear(self.config.hidden_size, 1),
             )
 
+        if with_lstm:
+            self.lstm_1 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
+            self.lstm_2 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
+
     def forward(self, x, mask, lm=True):
         output = self.backbone(x, mask)
         all_seq_features = output[0]  # (bs, seq_len, dim)
+
+        if self.with_lstm:
+            all_seq_features, _ = self.lstm_1(all_seq_features)
+            all_seq_features, _ = self.lstm_2(all_seq_features)
+
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
         if lm and self.with_lm:
             return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(last_seq_feature)
