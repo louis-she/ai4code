@@ -234,20 +234,21 @@ def main(
         )
         scaler.scale(loss).backward()
 
-        # 存储 weights 状态
-        awp.save()
-        # 使用上次的 grad 扰乱 weights
-        awp.attack_step()
-        # 扰乱的 weights 再次 forward
-        loss, split_loss, rank_loss, lm_loss = forward_train_loss(
-            input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
-        )
-        # 清空当前 grad
-        optimizer.zero_grad()
-        # 获得扰乱后的 grad
-        scaler.scale(loss).backward()
-        # 将之前的 weights restore 回来
-        awp.restore()
+        if engine.state.iteration > 100 and engine.state.iteration % 5 == 0:
+            # 存储 weights 状态
+            awp.save()
+            # 使用上次的 grad 扰乱 weights
+            awp.attack_step()
+            # 扰乱的 weights 再次 forward
+            loss, split_loss, rank_loss, lm_loss = forward_train_loss(
+                input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
+            )
+            # 清空当前 grad
+            optimizer.zero_grad()
+            # 获得扰乱后的 grad
+            scaler.scale(loss).backward()
+            # 将之前的 weights restore 回来
+            awp.restore()
 
         if engine.state.iteration % accumulation_steps == 0:
             scaler.step(optimizer)
