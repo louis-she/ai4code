@@ -18,9 +18,10 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data import DataLoader
 from transformers import AdamW, AutoTokenizer
 
+import ai4code
 from ai4code import datasets, metrics, models, utils
 from ai4code.utils import SerializableDict
-from ai4code.awp import AWP
+from ai4code.adversarial import AWP, FGM
 import ignite.distributed as idist
 from transformers import logging
 
@@ -66,6 +67,7 @@ def main(
     val_num_samples: int = None,
     dropout: float = 0.2,
     distil_context: str = None,
+    adversarial: Tuple[str, int, int] = None,  # type, start iteration, stride iteration
 ):
     params = SerializableDict(locals())
     torch.manual_seed(seed)
@@ -185,7 +187,9 @@ def main(
 
     scaler = torch.cuda.amp.GradScaler()
 
-    awp = AWP(model, optimizer, scaler=scaler)
+    if adversarial:
+        adversarial_klass, adversarial_start, adversarial_stride = adversarial
+        adversarial_obj = getattr(ai4code.adversarial, adversarial_klass.upper())(model, optimizer, scaler)
 
     rank_criterion = torch.nn.L1Loss().to(device)
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
@@ -223,6 +227,7 @@ def main(
 
         return loss, split_loss, rank_loss, lm_loss
 
+
     def train(engine, batch):
         model.train()
         input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
@@ -234,21 +239,19 @@ def main(
         )
         scaler.scale(loss).backward()
 
-        if engine.state.iteration > 100 and engine.state.iteration % 5 == 0:
-            # 存储 weights 状态
-            awp.save()
-            # 使用上次的 grad 扰乱 weights
-            awp.attack_step()
-            # 扰乱的 weights 再次 forward
+        if (
+            adversarial
+            and engine.state.iteration > adversarial_start
+            and engine.state.iteration % adversarial_stride == 0
+        ):
+            adversarial_obj.save()
+            adversarial_obj.attack()
             loss, split_loss, rank_loss, lm_loss = forward_train_loss(
                 input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
             )
-            # 清空当前 grad
             optimizer.zero_grad()
-            # 获得扰乱后的 grad
             scaler.scale(loss).backward()
-            # 将之前的 weights restore 回来
-            awp.restore()
+            adversarial_obj.restore()
 
         if engine.state.iteration % accumulation_steps == 0:
             scaler.step(optimizer)
