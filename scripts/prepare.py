@@ -1,4 +1,3 @@
-import math
 import fire
 import pandas as pd
 from pathlib import Path
@@ -8,10 +7,8 @@ from tqdm import tqdm
 import hashlib
 import os
 from sklearn.model_selection import KFold
-import matplotlib.pyplot as plt
 from ai4code.datasets import Sample
 from ai4code import datasets
-from collections import defaultdict
 from transformers import AutoTokenizer
 import multiprocessing
 

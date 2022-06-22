@@ -1,10 +1,17 @@
+from functools import reduce
 import hashlib
 import json
+import sys
+from termcolor import colored
+import os
 import random
 from collections import OrderedDict
+from typing import Dict
 from ignite.base.mixins import Serializable
 from ai4code import datasets
+import ai4code
 import torch
+import importlib
 
 
 class SerializableDict(Serializable):
@@ -140,3 +147,22 @@ def process(file):
         cell_encodes=cell_encodes
     )
     return sample
+
+
+def print_params(params: Dict[str, str]):
+    max_key_len = reduce(lambda x, y: max(x, len(y)), params.keys(), 0)
+    print('----------------------------------------------------------------------------------------------')
+    for key, value in params.items():
+        print(str(key).ljust(max_key_len + 2, " "), "=>", value)
+    print('----------------------------------------------------------------------------------------------')
+
+
+def reload(git_commit):
+    ai4code_path = f"/home/featurize/work/ai4code/_runs/{git_commit}"
+    if not os.path.exists(ai4code_path):
+        print(colored("ai4code path not exists, quit", "red"))
+        exit(1)
+    else:
+        print(colored(f"use ai4code at {ai4code_path}", "green"))
+        sys.path.insert(0, ai4code_path)
+        importlib.reload(ai4code)

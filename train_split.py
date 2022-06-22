@@ -55,24 +55,19 @@ def main(
     with_scheduler: bool = True,
     split_len: int = 8,
     accumulation_steps: int = 1,
-    pair_lm: bool = False,
+    pair_lm: bool = True,
     # dataset temp
-
     anchor_size: int = 64,
     max_len: int = 256,
     train_num_samples: int = None,
     val_num_samples: int = None,
     dropout: float = 0.2,
     distil_context: str = None,
-    tokenizer_pretrained_path: str = None,
 ):
     params = SerializableDict(locals())
     torch.manual_seed(seed)
     device = idist.device()
     rank = idist.get_local_rank()
-
-    if tokenizer_pretrained_path is None:
-        tokenizer_pretrained_path = pretrained_path
 
     max_epochs = max_epochs * len(train_folds)
 
@@ -94,20 +89,9 @@ def main(
     if val_num_samples is not None:
         val_data = {k: v for k, v in list(val_data.items())[:val_num_samples]}
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_pretrained_path, do_lower_case=True, use_fast=True
-    )
-    vocab_len = len(tokenizer)
-
     special_tokens = datasets.SpecialTokenID(
-        hash_id=tokenizer.encode("#", add_special_tokens=False)[0],
-        cls_token_id=tokenizer.cls_token_id,
-        sep_token_id=tokenizer.sep_token_id,
-        pad_token_id=tokenizer.pad_token_id,
-        unk_token_id=tokenizer.unk_token_id,
+        **pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/special_tokens.pkl", "rb"))
     )
-
-    del tokenizer
 
     current_train_fold_idx = 0
     current_lm_fold_idx = 0
@@ -169,9 +153,6 @@ def main(
         batch_size=batch_size,
     )
 
-    if pair_lm:
-        lm_loader = get_next_lm_loader()
-
     model = models.MultiHeadModel(pretrained_path, pair_lm, dropout)
     if load_model:
         state = torch.load(load_model, map_location="cpu")
@@ -197,7 +178,6 @@ def main(
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
     def train(engine, batch):
-        nonlocal lm_loader
         model.train()
         input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
             item.to(device) for item in batch[:6]
@@ -272,7 +252,6 @@ def main(
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
     RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
     if rank == 0:
-
         @trainer.on(Events.ITERATION_COMPLETED(every=50))
         def _print_progress(engine):
             print(

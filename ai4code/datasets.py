@@ -707,7 +707,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         self.shuffle_markdowns = shuffle_markdowns
         self.max_len = max_len
         self.all_cells = []
-        self.all_cell_pairs = []
+
         self.distil_context = distil_context
 
         if self.distil_context:
@@ -727,13 +727,15 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
                     if sample.cell_types[cell_key] == "markdown":
                         self.all_cells.append((sample.id, cell_key, split_id))
 
-        for sample in list(self.data.values()):
-            for cell_key, next_cell_key, previous_cell_key in zip(
-                sample.orders[1:-1], sample.orders[2:], sample.orders[:-2]
-            ):
-                self.all_cell_pairs.append(
-                    (sample.id, cell_key, next_cell_key, previous_cell_key)
-                )
+        if not self.only_task_data:
+            self.all_cell_pairs = []
+            for sample in list(self.data.values()):
+                for cell_key, next_cell_key, previous_cell_key in zip(
+                    sample.orders[1:-1], sample.orders[2:], sample.orders[:-2]
+                ):
+                    self.all_cell_pairs.append(
+                        (sample.id, cell_key, next_cell_key, previous_cell_key)
+                    )
 
         self.special_tokens = special_tokens
 
