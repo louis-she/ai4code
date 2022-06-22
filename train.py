@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Tuple
 from termcolor import colored
+import random
 
 import fire
 import torch
@@ -19,6 +20,7 @@ from transformers import AdamW, AutoTokenizer
 
 from ai4code import datasets, metrics, models, utils
 from ai4code.utils import SerializableDict
+from ai4code.awp import AWP
 import ignite.distributed as idist
 from transformers import logging
 
@@ -91,7 +93,12 @@ def main(
         val_data = {k: v for k, v in list(val_data.items())[:val_num_samples]}
 
     special_tokens = datasets.SpecialTokenID(
-        **pickle.load(open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/special_tokens.pkl", "rb"))
+        **pickle.load(
+            open(
+                f"/home/featurize/work/ai4code/data/{dataset_suffix}/special_tokens.pkl",
+                "rb",
+            )
+        )
     )
 
     current_train_fold_idx = 0
@@ -110,7 +117,7 @@ def main(
             max_len=max_len,
             split_len=split_len,
             distil_context=distil_context,
-            only_task_data=only_task_data
+            only_task_data=only_task_data,
         )
 
     def get_next_loader():
@@ -154,7 +161,9 @@ def main(
         batch_size=batch_size,
     )
 
-    model = models.MultiHeadModel(pretrained_path, with_lm=pair_lm, with_lstm=with_lstm, dropout=dropout)
+    model = models.MultiHeadModel(
+        pretrained_path, with_lm=pair_lm, with_lstm=with_lstm, dropout=dropout
+    )
     if load_model:
         state = torch.load(load_model, map_location="cpu")
         weights = state["model"] if "model" in state else state
@@ -175,15 +184,13 @@ def main(
     optimizer = idist.auto_optim(optimizer)
 
     scaler = torch.cuda.amp.GradScaler()
+
+    awp = AWP(model, optimizer, scaler=scaler)
+
     rank_criterion = torch.nn.L1Loss().to(device)
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
-    def train(engine, batch):
-        model.train()
-        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
-            item.to(device) for item in batch[:6]
-        ]
-
+    def forward_train_loss(input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets):
         real_bs = input_ids.shape[0]
         # input_ids, mask, lm_input_ids, lm_mask: bs x 256
         input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
@@ -214,11 +221,40 @@ def main(
             lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_targets)
             loss = split_loss + rank_loss + lm_loss
 
+        return loss, split_loss, rank_loss, lm_loss
+
+    def train(engine, batch):
+        model.train()
+        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
+            item.to(device) for item in batch[:6]
+        ]
+
+        loss, split_loss, rank_loss, lm_loss = forward_train_loss(
+            input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
+        )
+        scaler.scale(loss).backward()
+
+        # 几率性 attack
+        if random.random() > 0.8:
+            # 存储 weights 状态
+            awp.save()
+            # 使用上次的 grad 扰乱 weights
+            awp.attack_step()
+            # 扰乱的 weights 再次 forward
+            loss, split_loss, rank_loss, lm_loss = forward_train_loss(
+                input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
+            )
+            # 清空当前 grad
+            optimizer.zero_grad()
+            # 获得扰乱后的 grad
             scaler.scale(loss).backward()
-            if engine.state.iteration % accumulation_steps == 0:
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
+            # 将之前的 weights restore 回来
+            awp.restore()
+
+        if engine.state.iteration % accumulation_steps == 0:
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
 
         return (
             loss.detach().item(),
@@ -253,19 +289,20 @@ def main(
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
     RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
     if rank == 0:
+
         @trainer.on(Events.ITERATION_COMPLETED(every=50))
         def _print_progress(engine):
             print(
-                "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\t"
-            .format(
-                engine.state.iteration % engine.state.epoch_length,
-                engine.state.epoch_length,
-                engine.state.epoch,
-                engine.state.metrics["loss"],
-                engine.state.metrics["cls_loss"],
-                engine.state.metrics["rank_loss"],
-                engine.state.metrics["lm_loss"],
-            ))
+                "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\t".format(
+                    engine.state.iteration % engine.state.epoch_length,
+                    engine.state.epoch_length,
+                    engine.state.epoch,
+                    engine.state.metrics["loss"],
+                    engine.state.metrics["cls_loss"],
+                    engine.state.metrics["rank_loss"],
+                    engine.state.metrics["lm_loss"],
+                )
+            )
 
     metrics.KendallTauWithSplits(val_data, split_len).attach(evaluator, "kendall_tau")
 
