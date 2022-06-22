@@ -376,5 +376,5 @@ def spawn(local_rank):
 
 
 if __name__ == "__main__":
-    with idist.Parallel(backend="nccl") as parallel:
+    with idist.Parallel(backend="gloo") as parallel:
         parallel.run(spawn)
