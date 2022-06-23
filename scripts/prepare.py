@@ -134,6 +134,7 @@ def main(
         orders_dict[item.id] = item.cell_order.split(" ")
 
     tokenizer = AutoTokenizer.from_pretrained(pretrained_tokenizer, do_lower_case=True, use_fast=True)
+    tokenizer.add_special_tokens({ "additional_special_tokens": [ "[unused1]" ] })
 
     with multiprocessing.Pool(processes=8) as pool:
         results = list(
@@ -170,6 +171,15 @@ def main(
     assert len([sample for sample in mini_data.values() if sample.fold == 0]) == 100
 
     pickle.dump(mini_data, open(f"/home/featurize/work/ai4code/data/{suffix}/mini.{suffix}.pkl", "wb"))
+
+    pickle.dump(dict(
+        hash_id=tokenizer.encode("#", add_special_tokens=False)[0],
+        cls_token_id=tokenizer.cls_token_id,
+        sep_token_id=tokenizer.sep_token_id,
+        pad_token_id=tokenizer.pad_token_id,
+        unk_token_id=tokenizer.unk_token_id,
+    ), open(f"/home/featurize/work/ai4code/data/{suffix}/special_tokens.pkl", "wb"))
+
 
 
 if __name__ == "__main__":
