@@ -7,7 +7,7 @@ import random
 import numpy as np
 from typing import Dict, List, Optional
 import re
-from markdown import markdown
+from markdown import markdown, markdownFromFile
 from tokenizers import Tokenizer
 import torch
 from operator import itemgetter
@@ -112,6 +112,14 @@ def markdown_preprocess_v6(code):
     return code
 
 
+def markdown_preprocess_v7(code):
+    """换行符替换为 [unused1]
+    """
+    code = code.replace("\n", "[unused1]")
+    code = markdown_preprocess_v6(code)
+    return code
+
+
 def code_preprocess_v5(code):
     """
     仅保留顶层代码，丢弃所有 nested 的代码
@@ -159,6 +167,10 @@ def preprocessor_v7(text, type):
 
 def preprocessor_v8(text, type):
     return dict(code=code_preprocess_v7, markdown=markdown_preprocess_v6)[type](text)
+
+
+def preprocessor_v9(text, type):
+    return dict(code=code_preprocess_v7, markdown=markdownFromFile)[type](text)
 
 
 @dataclass
