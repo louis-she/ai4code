@@ -60,6 +60,7 @@ def main(
     split_len: int = 8,
     accumulation_steps: int = 1,
     pair_lm: bool = True,
+    with_context_feature: bool = False,
     # dataset temp
     anchor_size: int = 64,
     max_len: int = 256,
@@ -164,7 +165,11 @@ def main(
     )
 
     model = models.MultiHeadModel(
-        pretrained_path, with_lm=pair_lm, with_lstm=with_lstm, dropout=dropout, context_feature_dim=74
+        pretrained_path,
+        with_lm=pair_lm,
+        with_lstm=with_lstm,
+        dropout=dropout,
+        context_feature_dim=74 if with_context_feature else None,
     )
     if load_model:
         state = torch.load(load_model, map_location="cpu")
@@ -189,12 +194,16 @@ def main(
 
     if adversarial:
         adversarial_klass, adversarial_start, adversarial_stride = adversarial
-        adversarial_obj = getattr(ai4code.adversarial, adversarial_klass.upper())(model, optimizer, scaler)
+        adversarial_obj = getattr(ai4code.adversarial, adversarial_klass.upper())(
+            model, optimizer, scaler
+        )
 
     rank_criterion = torch.nn.L1Loss().to(device)
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
-    def forward_train_loss(input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature):
+    def forward_train_loss(
+        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature
+    ):
         real_bs = input_ids.shape[0]
         # input_ids, mask, lm_input_ids, lm_mask: bs x 256
         input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
@@ -207,7 +216,9 @@ def main(
         mask = mask[shuffle_indices]
 
         with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank, lm_logits = model(input_ids, mask, context_feature=context_feature)
+            in_split, rank, lm_logits = model(
+                input_ids, mask, context_feature=context_feature
+            )
 
             in_split = in_split[unshuffle_indices][:real_bs]
             rank = rank[unshuffle_indices][:real_bs]
@@ -228,7 +239,6 @@ def main(
 
         return loss, split_loss, rank_loss, lm_loss
 
-
     def train(engine, batch):
         model.train()
         input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature = [
@@ -248,7 +258,13 @@ def main(
             adversarial_obj.save()
             adversarial_obj.attack()
             loss, split_loss, rank_loss, lm_loss = forward_train_loss(
-                input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature
+                input_ids,
+                mask,
+                lm_input_ids,
+                lm_mask,
+                targets,
+                lm_targets,
+                context_feature,
             )
             optimizer.zero_grad()
             scaler.scale(loss).backward()
@@ -269,10 +285,14 @@ def main(
     @torch.no_grad()
     def rank_eval(engine, batch):
         model.eval()
-        input_ids, mask, targets, context_feature = [item.to(device) for item in batch[:4]]
+        input_ids, mask, targets, context_feature = [
+            item.to(device) for item in batch[:4]
+        ]
         sample_ids, cell_keys, split_ids = batch[4:]
 
-        in_split, rank = model(input_ids, mask, lm=False, context_feature=context_feature)
+        in_split, rank = model(
+            input_ids, mask, lm=False, context_feature=context_feature
+        )
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
         valid_ranks = targets[:, 0] == 1
         rank_loss = rank_criterion(
