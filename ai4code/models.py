@@ -40,7 +40,7 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False):
+    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False, context_feature_dim=False):
         super().__init__()
         self.pretrained_path = pretrained_path
         try:
@@ -50,24 +50,28 @@ class MultiHeadModel(nn.Module):
         self.config = self.backbone.config
         self.with_lm = with_lm
         self.with_lstm = with_lstm
+        self.context_feature_dim = context_feature_dim
 
         try:
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
         except:
             out_features_num = 768
 
+        if self.context_feature_dim:
+            out_features_num += self.context_feature_dim
+
         self.classifier = nn.Sequential(
-            nn.Linear(in_features=out_features_num, out_features=out_features_num),
+            nn.Linear(in_features=out_features_num, out_features=self.config.hidden_size),
             nn.GELU(),
             nn.Dropout(p=dropout),
-            nn.Linear(in_features=out_features_num, out_features=1),
+            nn.Linear(in_features=self.config.hidden_size, out_features=1),
         )
 
         self.ranker = nn.Sequential(
-            nn.Linear(in_features=out_features_num, out_features=out_features_num),
+            nn.Linear(in_features=out_features_num, out_features=self.config.hidden_size),
             nn.GELU(),
             nn.Dropout(p=dropout),
-            nn.Linear(in_features=out_features_num, out_features=1),
+            nn.Linear(in_features=self.config.hidden_size, out_features=1),
         )
 
         if with_lm:
@@ -80,21 +84,26 @@ class MultiHeadModel(nn.Module):
 
         if with_lstm:
             self.lstm_1 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
-            # self.lstm_2 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
+            self.lstm_2 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
 
-    def forward(self, x, mask, lm=True):
+    def forward(self, x, mask, lm=True, context_feature=None):
         output = self.backbone(x, mask)
         all_seq_features = output[0]  # (bs, seq_len, dim)
 
         if self.with_lstm:
             all_seq_features, _ = self.lstm_1(all_seq_features)
-            # all_seq_features, _ = self.lstm_2(all_seq_features)
+            all_seq_features, _ = self.lstm_2(all_seq_features)
 
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
-        if lm and self.with_lm:
-            return self.classifier(last_seq_feature), self.ranker(last_seq_feature), self.lm(last_seq_feature)
+        if self.context_feature_dim:
+            last_seq_context_feature = torch.cat([last_seq_feature, context_feature], dim=1)
         else:
-            return self.classifier(last_seq_feature), self.ranker(last_seq_feature)
+            last_seq_context_feature = last_seq_feature
+
+        if lm and self.with_lm:
+            return self.classifier(last_seq_context_feature), self.ranker(last_seq_context_feature), self.lm(last_seq_feature)
+        else:
+            return self.classifier(last_seq_context_feature), self.ranker(last_seq_context_feature)
 
 
 class CodebertModel(nn.Module):

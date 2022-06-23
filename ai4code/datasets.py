@@ -180,8 +180,6 @@ class Sample:
     ancestor: str
     parent: str
     orders: List[str]
-    markdown_cell_count: int
-    code_cell_count: int
     content_sha1: str
     content_len: int
     cell_keys: Dict[str, str]
@@ -191,6 +189,31 @@ class Sample:
     cell_ranks_normed: Dict[str, float]
     cell_types: Dict[str, str]
     cell_encodes: Dict[str, List[int]]
+
+    # Statistical
+    markdown_cell_count: int
+    code_cell_count: int
+    code_ratio: int
+
+    percentile_cell_lens: List[float]
+    mean_cell_lens: float
+
+    percentile_markdown_lens: List[float]
+    mean_markdown_lens: List[float]
+
+    percentile_code_lens: List[float]
+    mean_code_lens: List[float]
+
+    percentile_cell_ids_lens: List[float]
+    mean_cell_ids_lens: float
+
+    percentile_markdown_ids_lens: List[float]
+    mean_markdown_ids_lens: List[float]
+
+    percentile_code_ids_lens: List[float]
+    mean_code_ids_lens: List[float]
+
+    # data split
     fold: Optional[int] = None
 
 
@@ -806,11 +829,29 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         rank_normed = rank / (self.split_len + 1)
         in_split = float(rank_normed > 0 and rank_normed < 1)
 
+        # 8 + 6 * 11 = 74
+        context_feature = np.log2(np.array([
+            sample.markdown_cell_count,
+            sample.code_cell_count,
+            *sample.percentile_cell_lens,
+            sample.mean_cell_lens,
+            *sample.percentile_markdown_lens,
+            sample.mean_markdown_lens,
+            *sample.percentile_code_lens,
+            sample.mean_code_lens,
+            *sample.percentile_cell_ids_lens,
+            sample.mean_cell_ids_lens,
+            *sample.percentile_markdown_ids_lens,
+            sample.mean_markdown_ids_lens,
+            *sample.percentile_code_ids_lens,
+            sample.mean_code_ids_lens
+        ]))
+
         return (
             torch.tensor(input_ids).long(),
             torch.tensor(attention_mask).long(),
             torch.tensor([in_split, rank_normed]),
-            torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
+            torch.tensor(context_feature).float(),
             sample_id,
             cell_key,
             split_id,
@@ -867,9 +908,9 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         )
 
     def __getitem__(self, index: int):
-        input_ids, mask, targets, _, sample_id, cell_key, split_id  = self.get_task_data(index)
+        input_ids, mask, targets, context_feature, sample_id, cell_key, split_id  = self.get_task_data(index)
         if not self.only_task_data:
             lm_input_ids, lm_mask, lm_targets = self.get_pair_data(index)
-            return input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, sample_id, cell_key, split_id
-        return input_ids, mask, targets, sample_id, cell_key, split_id
+            return input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature, sample_id, cell_key, split_id
+        return input_ids, mask, targets, context_feature, sample_id, cell_key, split_id
 

@@ -2,6 +2,7 @@ import fire
 import pandas as pd
 from pathlib import Path
 import pickle
+import numpy as np
 import json
 from tqdm import tqdm
 import hashlib
@@ -90,6 +91,38 @@ def process(file):
         value = processor(value, cell_types[cell_key])
         cell_encodes[cell_key] = tokenizer.encode(value, add_special_tokens=False)
 
+    code_ratio = code_count / (code_count + markdown_count)
+
+    cell_lens_dict = {key: len(value) for key, value in body['source'].items()}
+
+    cell_lens = np.array(list(cell_lens_dict.values()))
+    percentile_cell_lens = [np.percentile(cell_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_cell_lens = cell_lens.mean()
+
+    markdown_lens = np.array([l for key, l in cell_lens_dict.items() if cell_types[key] == "markdown"])
+    percentile_markdown_lens = [np.percentile(markdown_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_markdown_lens = markdown_lens.mean()
+
+    code_lens = np.array([l for key, l in cell_lens_dict.items() if cell_types[key] == "code"])
+    percentile_code_lens = [np.percentile(code_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_code_lens = code_lens.mean()
+
+    cell_ids_lens_dict = {key: len(value) for key, value in cell_encodes.items()}
+
+    cell_ids_lens = np.array(list(cell_ids_lens_dict.values()))
+    percentile_cell_ids_lens = [np.percentile(cell_ids_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_cell_ids_lens = cell_ids_lens.mean()
+
+    markdown_ids_lens = np.array([l for key, l in cell_ids_lens_dict.items() if cell_types[key] == "markdown"])
+    percentile_markdown_ids_lens = [np.percentile(markdown_ids_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_markdown_ids_lens = markdown_ids_lens.mean()
+
+    code_ids_lens = np.array([l for key, l in cell_ids_lens_dict.items() if cell_types[key] == "code"])
+    percentile_code_ids_lens = [np.percentile(code_ids_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_code_ids_lens = code_ids_lens.mean()
+
+    cell_lens = np.array([len(x) for x in body['source'].values()])
+
     sample = Sample(
         id=id,
         sources=body['source'],
@@ -106,7 +139,20 @@ def process(file):
         cell_ranks=cell_ranks,
         cell_ranks_normed=cell_ranks_normed,
         cell_types=cell_types,
-        cell_encodes=cell_encodes
+        cell_encodes=cell_encodes,
+        code_ratio=code_ratio,
+        percentile_cell_lens=percentile_cell_lens,
+        mean_cell_lens=mean_cell_lens,
+        percentile_markdown_lens=percentile_markdown_lens,
+        mean_markdown_lens=mean_markdown_lens,
+        percentile_code_lens=percentile_code_lens,
+        mean_code_lens=mean_code_lens,
+        percentile_cell_ids_lens=percentile_cell_ids_lens,
+        mean_cell_ids_lens=mean_cell_ids_lens,
+        percentile_markdown_ids_lens=percentile_markdown_ids_lens,
+        mean_markdown_ids_lens=mean_markdown_ids_lens,
+        percentile_code_ids_lens=percentile_code_ids_lens,
+        mean_code_ids_lens=mean_code_ids_lens,
     )
     return sample
 
