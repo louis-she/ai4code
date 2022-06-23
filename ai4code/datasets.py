@@ -170,7 +170,7 @@ def preprocessor_v8(text, type):
 
 
 def preprocessor_v9(text, type):
-    return dict(code=code_preprocess_v7, markdown=markdownFromFile)[type](text)
+    return dict(code=code_preprocess_v7, markdown=markdown_preprocess_v7)[type](text)
 
 
 @dataclass
