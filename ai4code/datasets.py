@@ -1,5 +1,7 @@
 import ast
 from copy import copy
+
+from sklearn.preprocessing import StandardScaler
 from ai4code import utils
 import math
 import pickle
@@ -742,6 +744,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         self.shuffle_markdowns = shuffle_markdowns
         self.max_len = max_len
         self.all_cells = []
+        self.feature_scaler = StandardScaler()
 
         self.distil_context = distil_context
 
@@ -830,7 +833,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         in_split = float(rank_normed > 0 and rank_normed < 1)
 
         # 8 + 6 * 11 = 74
-        context_feature = np.log2(np.array([
+        context_feature = np.array([
             sample.markdown_cell_count,
             sample.code_cell_count,
             *sample.percentile_cell_lens,
@@ -845,7 +848,10 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             sample.mean_markdown_ids_lens,
             *sample.percentile_code_ids_lens,
             sample.mean_code_ids_lens
-        ]))
+        ])
+
+        context_feature[context_feature == 0] = 1e-5
+        context_feature = np.log2(context_feature)
 
         return (
             torch.tensor(input_ids).long(),
