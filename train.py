@@ -23,6 +23,7 @@ from ai4code import datasets, metrics, models, utils
 from ai4code.utils import SerializableDict
 from ai4code.adversarial import AWP, FGM
 import ignite.distributed as idist
+from torch.optim.swa_utils import AveragedModel
 from transformers import logging
 
 logging.set_verbosity_error()
@@ -61,6 +62,7 @@ def main(
     accumulation_steps: int = 1,
     pair_lm: bool = True,
     with_context_feature: bool = False,
+    with_swa: bool = False,
     # dataset temp
     anchor_size: int = 64,
     max_len: int = 256,
@@ -78,8 +80,8 @@ def main(
     max_epochs = max_epochs * len(train_folds)
 
     if testing:
-        train_num_samples = 100
-        val_num_samples = 100
+        train_num_samples = 20
+        val_num_samples = 20
         code = "test_" + code
         override = True
 
@@ -171,6 +173,10 @@ def main(
         dropout=dropout,
         context_feature_dim=74 if with_context_feature else None,
     )
+
+    if with_swa:
+        swa_model = AveragedModel(model).to(device)
+
     if load_model:
         state = torch.load(load_model, map_location="cpu")
         weights = state["model"] if "model" in state else state
@@ -275,6 +281,9 @@ def main(
             scaler.update()
             optimizer.zero_grad()
 
+        if with_swa:
+            swa_model.update_parameters(model)
+
         return (
             loss.detach().item(),
             split_loss.detach().item(),
@@ -284,13 +293,14 @@ def main(
 
     @torch.no_grad()
     def rank_eval(engine, batch):
-        model.eval()
+        eval_model = model if not with_swa else swa_model
+        eval_model.eval()
         input_ids, mask, targets, context_feature = [
             item.to(device) for item in batch[:4]
         ]
         sample_ids, cell_keys, split_ids = batch[4:]
 
-        in_split, rank = model(
+        in_split, rank = eval_model(
             input_ids, mask, lm=False, context_feature=context_feature
         )
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
@@ -305,8 +315,6 @@ def main(
     trainer = Engine(train)
     evaluator = Engine(rank_eval)
 
-    # trainer plugins
-    # if rank == 0:
     RunningAverage(output_transform=lambda x: x[0]).attach(trainer, "loss")
     RunningAverage(output_transform=lambda x: x[1]).attach(trainer, "cls_loss")
     RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
