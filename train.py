@@ -56,7 +56,7 @@ def main(
     train_folds: Tuple[int] = (1,),
     val_folds: Tuple[int] = (0,),
     evaluate_every: int = 1,
-    with_scheduler: bool = True,
+    with_scheduler: bool = False,
     with_lstm: bool = False,
     split_len: int = 8,
     accumulation_steps: int = 1,
@@ -72,10 +72,12 @@ def main(
     distil_context: str = None,
     adversarial: Tuple[str, int, int] = None,  # type, start iteration, stride iteration
 ):
+    rank = idist.get_local_rank()
     params = SerializableDict(locals())
+    if rank == 0:
+        utils.print_params(params.state_dict())
     torch.manual_seed(seed)
     device = idist.device()
-    rank = idist.get_local_rank()
 
     max_epochs = max_epochs * len(train_folds)
 
