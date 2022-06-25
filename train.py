@@ -191,7 +191,12 @@ def main(
                     "yellow",
                 )
             )
-            model.load_state_dict(weights, strict=False)
+            try:
+                model.load_state_dict(weights, strict=False)
+            except Exception as e:
+                print(colored(f"Still a error raised: {e}, will try to load only the transformers weights", "red"))
+                weights = {k: v for k, v in weights.items() if k.startswith("backbone")}
+                model.load_state_dict(weights)
 
     model = idist.auto_model(model)
 
