@@ -4,6 +4,7 @@ import pickle
 from typing import Dict
 from ignite.metrics import Metric
 import ignite.distributed as idist
+import torch
 import torch.distributed as dist
 
 from ai4code.datasets import Sample
@@ -105,27 +106,28 @@ class KendallTauWithSplits(Metric):
         self.reset()
 
     def reset(self):
-        # self._predictions = defaultdict(lambda: defaultdict(dict))
         self._all_predictions = []
         self._all_targets = []
-        self._submission_data = {}
+        self._raw_preds = {}
         self._predictions = []
 
     def update(self, output):
         loss, in_splits, ranks, sample_ids, cell_ids, split_ids = output
         for in_split, rank, sample_id, cell_id, split_id in zip(in_splits, ranks, sample_ids, cell_ids, split_ids):
-            # self._predictions[sample_id][cell_id][split_id] = [in_split.item(), rank.item(), sample_id, split_id.item()]
             self._predictions.append([in_split.item(), rank.item(), sample_id, cell_id, split_id.item()])
 
     def compute(self):
-        all_predictions = [None for _ in range(idist.get_world_size())]
-        dist.all_gather_object(all_predictions, self._predictions)
+        if torch.distributed.is_initialized():
+            all_predictions = [None for _ in range(idist.get_world_size())]
+            dist.all_gather_object(all_predictions, self._predictions)
+        else:
+            all_predictions = [self._predictions]
 
         all_predictions_dict = defaultdict(lambda: defaultdict(dict))
         for in_split, rank, sample_id, cell_id, split_id in [x for xs in all_predictions for x in xs]:
             all_predictions_dict[sample_id][cell_id][split_id] = [in_split, rank, sample_id, split_id]
 
-        if idist.get_local_rank() != 0:
+        if torch.distributed.is_initialized() and idist.get_local_rank() != 0:
             return
 
         for sample in self.val_data.values():
@@ -149,13 +151,13 @@ class KendallTauWithSplits(Metric):
                             max_in_split_score = result[0]
                     rank_normed, split_id = in_split_result[1], in_split_result[3]
                     cell_rank = rank_normed * (self.split_len + 1) + (split_id * self.split_len)
-                    item = (cell_key, cell_rank)
+                    item = (cell_key, cell_rank, max_in_split_score)
 
                 all_preds.append(item)
             cell_id_predicted = [
                 item[0] for item in sorted(all_preds, key=lambda x: x[1])
             ]
-            self._submission_data[sample.id] = cell_id_predicted
+            self._raw_preds[sample.id] = all_preds
             self._all_predictions.append(cell_id_predicted)
             self._all_targets.append(sample.orders)
 

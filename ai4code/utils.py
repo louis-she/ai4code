@@ -1,12 +1,16 @@
+from dataclasses import dataclass
 from functools import reduce
 import hashlib
 import json
+import multiprocessing
+import pickle
 import sys
+import numpy as np
 from termcolor import colored
 import os
 import random
 from collections import OrderedDict
-from typing import Dict
+from typing import Dict, List
 from ignite.base.mixins import Serializable
 from ai4code import datasets
 import ai4code
@@ -82,26 +86,65 @@ def get_ranks(cell_types, cell_orders, cell_keys):
 
 orders_dict, ancestors_dict, tokenizer, processor_suffix = None, None, None, None
 
-
-def process(file):
-    global orders_dict, ancestors_dict, tokenizer, processor_suffix
+# for submit
+def process_submit(file):
 
     id = file.stem
     content = file.read_text()
     body = json.loads(content)
-    hash_object = hashlib.sha1(content.encode())
+    cell_keys = list(body['cell_type'].keys())
+    code_count = len([x for x in body['cell_type'].values() if x == "code"])
+    markdown_count = len([x for x in body['cell_type'].values() if x == "markdown"])
+    cell_types = body['cell_type']
+    cell_orders = cell_keys
+    cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
+    cell_ranks_norm_factor = code_count + 1
+    cell_ranks_normed = {cell_id: (rank / cell_ranks_norm_factor) for cell_id, rank in cell_ranks.items()}
 
-    content_sha1 = hash_object.hexdigest()
+    cell_encodes = {}
+    for tokenizer_cfg in ai4code.cfg.encode_files:
+        cell_encodes[tokenizer_cfg["name"]] = {}
+
+    for cell_key, value in body["source"].items():
+        cell_type = cell_types[cell_key]
+
+        for tokenizer_cfg in ai4code.cfg.encode_files:
+            try:
+                value = tokenizer_cfg["preprocessor"](value, cell_type)
+            except IndexError:
+                value = " "
+            cell_encodes[tokenizer_cfg["name"]][cell_key] = tokenizer_cfg["tokenizer"].encode(value, add_special_tokens=False)
+
+    sample = datasets.SampleSubmit(
+        id=id,
+        orders=cell_keys,
+        cell_keys=list(cell_keys),
+        cell_ranks=cell_ranks,
+        cell_ranks_normed=cell_ranks_normed,
+        cell_types=cell_types,
+        cell_encodes=cell_encodes,
+        code_cell_count=code_count,
+        markdown_cell_count=markdown_count
+    )
+    return sample
+
+
+def process(file):
+    global orders_dict, ancestors_dict, tokenizer
+
+    id = file.stem
+    content = file.read_text()
+    body = json.loads(content)
+
     content_len = len(content)
     markdown_count = 0
     code_count = 0
 
     cell_keys = list(body['cell_type'].keys())
-    cell_sha1s = {}
     cell_lens = {}
     cell_ranks = {}
     cell_types = body['cell_type']
-    cell_orders = orders_dict[id]
+    cell_orders = orders_dict[id] if orders_dict and id in orders_dict else cell_keys
 
     for key in cell_keys:
         type = body['cell_type'][key]
@@ -112,41 +155,91 @@ def process(file):
         else:
             print(f"Unknown type {type}, ignore")
         source = body['source'][key]
-        hash_object = hashlib.sha1(source.encode())
-        cell_sha1s[key] = hash_object.hexdigest()
         cell_lens[key] = len(source)
 
     cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
     cell_ranks_norm_factor = code_count + 1
     cell_ranks_normed = {cell_id: (rank / cell_ranks_norm_factor) for cell_id, rank in cell_ranks.items()}
-    ancestor = ancestors_dict[id][0] if ancestors_dict is not None and isinstance(ancestors_dict[id][0], str) else None
-    parent = ancestors_dict[id][1] if ancestors_dict is not None and isinstance(ancestors_dict[id][1], str) else None
+    ancestor = ancestors_dict[id][0] if ancestors_dict and isinstance(ancestors_dict[id][0], str) else None
+    parent = ancestors_dict[id][1] if ancestors_dict and isinstance(ancestors_dict[id][1], str) else None
 
     cell_encodes = {}
+    for tokenizer_cfg in ai4code.cfg.encode_files:
+        cell_encodes[tokenizer_cfg["name"]] = {}
+
     for cell_key, value in body["source"].items():
-        processor = getattr(datasets, processor_suffix)
-        value = processor(value, cell_types[cell_key])
-        cell_encodes[cell_key] = tokenizer.encode(value, add_special_tokens=False)
+        cell_type = cell_types[cell_key]
+
+        for tokenizer_cfg in ai4code.cfg.encode_files:
+            try:
+                value = tokenizer_cfg["preprocessor"](value, cell_type)
+            except IndexError:
+                value = " "
+            cell_encodes[tokenizer_cfg["name"]][cell_key] = tokenizer_cfg["tokenizer"].encode(value, add_special_tokens=False)
+
+    code_ratio = code_count / (code_count + markdown_count)
+
+    cell_lens_dict = {key: len(value) for key, value in body['source'].items()}
+
+    cell_lens = np.array(list(cell_lens_dict.values()))
+    percentile_cell_lens = [np.percentile(cell_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_cell_lens = cell_lens.mean()
+
+    markdown_lens = np.array([l for key, l in cell_lens_dict.items() if cell_types[key] == "markdown"])
+    percentile_markdown_lens = [np.percentile(markdown_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_markdown_lens = markdown_lens.mean()
+
+    code_lens = np.array([l for key, l in cell_lens_dict.items() if cell_types[key] == "code"])
+    percentile_code_lens = [np.percentile(code_lens, percentile) for percentile in range(0, 101, 10)]
+    mean_code_lens = code_lens.mean()
+
+    # cell_ids_lens_dict = {key: len(value) for key, value in cell_encodes.items()}
+
+    # cell_ids_lens = np.array(list(cell_ids_lens_dict.values()))
+    # percentile_cell_ids_lens = [np.percentile(cell_ids_lens, percentile) for percentile in range(0, 101, 10)]
+    # mean_cell_ids_lens = cell_ids_lens.mean()
+
+    # markdown_ids_lens = np.array([l for key, l in cell_ids_lens_dict.items() if cell_types[key] == "markdown"])
+    # percentile_markdown_ids_lens = [np.percentile(markdown_ids_lens, percentile) for percentile in range(0, 101, 10)]
+    # mean_markdown_ids_lens = markdown_ids_lens.mean()
+
+    # code_ids_lens = np.array([l for key, l in cell_ids_lens_dict.items() if cell_types[key] == "code"])
+    # percentile_code_ids_lens = [np.percentile(code_ids_lens, percentile) for percentile in range(0, 101, 10)]
+    # mean_code_ids_lens = code_ids_lens.mean()
+
+    cell_lens = np.array([len(x) for x in body['source'].values()])
 
     sample = datasets.Sample(
         id=id,
         sources=body['source'],
         ancestor=ancestor,
         parent=parent,
-        orders=orders_dict[id],
+        orders=cell_orders,
         markdown_cell_count=markdown_count,
         code_cell_count=code_count,
-        content_sha1=content_sha1,
         content_len=content_len,
         cell_keys=list(cell_keys),
-        cell_sha1s=cell_sha1s,
         cell_lens=cell_lens,
         cell_ranks=cell_ranks,
         cell_ranks_normed=cell_ranks_normed,
         cell_types=cell_types,
-        cell_encodes=cell_encodes
+        cell_encodes=cell_encodes,
+        code_ratio=code_ratio,
+        percentile_cell_lens=percentile_cell_lens,
+        mean_cell_lens=mean_cell_lens,
+        percentile_markdown_lens=percentile_markdown_lens,
+        mean_markdown_lens=mean_markdown_lens,
+        percentile_code_lens=percentile_code_lens,
+        mean_code_lens=mean_code_lens,
+        # percentile_cell_ids_lens=percentile_cell_ids_lens,
+        # mean_cell_ids_lens=mean_cell_ids_lens,
+        # percentile_markdown_ids_lens=percentile_markdown_ids_lens,
+        # mean_markdown_ids_lens=mean_markdown_ids_lens,
+        # percentile_code_ids_lens=percentile_code_ids_lens,
+        # mean_code_ids_lens=mean_code_ids_lens,
     )
     return sample
+
 
 
 def print_params(params: Dict[str, str]):
@@ -155,3 +248,25 @@ def print_params(params: Dict[str, str]):
     for key, value in params.items():
         print(str(key).ljust(max_key_len + 2, " "), "=>", value)
     print('----------------------------------------------------------------------------------------------')
+
+
+def cpu_cores():
+    return multiprocessing.cpu_count()
+
+
+# submit configuraions
+@dataclass
+class Config:
+    dataset_root: str
+    encode_files: List[Dict[str, str]]
+    checkpoints: List[Dict[str, str]]
+
+
+def dump_cfg(cfg: Config):
+    with open("/tmp/cfg.pkl", "wb") as f:
+        pickle.dump(cfg, f)
+
+
+def load_cfg() -> Config:
+    with open("/tmp/cfg.pkl", "rb") as f:
+        return pickle.load(f)

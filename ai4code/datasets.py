@@ -176,16 +176,27 @@ def preprocessor_v9(text, type):
 
 
 @dataclass
+class SampleSubmit:
+    id: str
+    cell_encodes: Dict[str, List[int]]
+    cell_keys: List[str]
+    cell_ranks: List[float]
+    cell_types: List[str]
+    cell_ranks_normed: List[float]
+    orders: List[str]
+    code_cell_count: int
+    markdown_cell_count: int
+
+
+@dataclass
 class Sample:
     id: str
     sources: Dict[str, str]
     ancestor: str
     parent: str
     orders: List[str]
-    content_sha1: str
     content_len: int
     cell_keys: Dict[str, str]
-    cell_sha1s: Dict[str, str]
     cell_lens: Dict[str, int]
     cell_ranks: Dict[str, float]
     cell_ranks_normed: Dict[str, float]
@@ -205,15 +216,6 @@ class Sample:
 
     percentile_code_lens: List[float]
     mean_code_lens: List[float]
-
-    percentile_cell_ids_lens: List[float]
-    mean_cell_ids_lens: float
-
-    percentile_markdown_ids_lens: List[float]
-    mean_markdown_ids_lens: List[float]
-
-    percentile_code_ids_lens: List[float]
-    mean_code_ids_lens: List[float]
 
     # data split
     fold: Optional[int] = None
@@ -732,9 +734,10 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         anchor_size,
         max_len,
         split_len,
-        distil_context,
+        distil_context=None,
         shuffle_markdowns=True,
         only_task_data=False,
+        encode_key=None,
     ):
         self.read_count = 0
         self.only_task_data = only_task_data
@@ -745,6 +748,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         self.max_len = max_len
         self.all_cells = []
         self.feature_scaler = StandardScaler()
+        self.encode_key = encode_key
 
         self.distil_context = distil_context
 
@@ -780,11 +784,17 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.all_cells)
 
+    def get_encode(self, sample, cell_key):
+        if self.encode_key:
+            return sample.cell_encodes[self.encode_key][cell_key]
+        else:
+            return sample.cell_encodes[cell_key]
+
     def get_task_data(self, index):
         sample_id, cell_key, split_id = self.all_cells[index]
         sample = self.data[sample_id]
 
-        anchor_encode = sample.cell_encodes[cell_key][: self.anchor_size]
+        anchor_encode = self.get_encode(sample, cell_key)[: self.anchor_size]
 
         input_ids = (
             [self.special_tokens.cls_token_id]
@@ -800,7 +810,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         context_encodes = []
         context_types = []
         for context_cell_key in context_cell_keys:
-            context_encode = sample.cell_encodes[context_cell_key]
+            context_encode = self.get_encode(sample, context_cell_key)
             cell_type = sample.cell_types[context_cell_key]
             context_encodes.append(context_encode)
             context_types.append(cell_type)
@@ -842,12 +852,12 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             sample.mean_markdown_lens,
             *sample.percentile_code_lens,
             sample.mean_code_lens,
-            *sample.percentile_cell_ids_lens,
-            sample.mean_cell_ids_lens,
-            *sample.percentile_markdown_ids_lens,
-            sample.mean_markdown_ids_lens,
-            *sample.percentile_code_ids_lens,
-            sample.mean_code_ids_lens
+            # *sample.percentile_cell_ids_lens,
+            # sample.mean_cell_ids_lens,
+            # *sample.percentile_markdown_ids_lens,
+            # sample.mean_markdown_ids_lens,
+            # *sample.percentile_code_ids_lens,
+            # sample.mean_code_ids_lens
         ])
 
         context_feature[context_feature == 0] = 1e-5
@@ -919,4 +929,3 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             lm_input_ids, lm_mask, lm_targets = self.get_pair_data(index)
             return input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature, sample_id, cell_key, split_id
         return input_ids, mask, targets, context_feature, sample_id, cell_key, split_id
-

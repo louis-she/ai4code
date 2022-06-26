@@ -40,8 +40,12 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False, context_feature_dim=False):
+    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False, with_context_feature=False):
         super().__init__()
+        if with_context_feature:
+            self.context_feature_dim = 74
+        else:
+            self.context_feature_dim = None
         self.pretrained_path = pretrained_path
         try:
             self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False)
@@ -50,7 +54,6 @@ class MultiHeadModel(nn.Module):
         self.config = self.backbone.config
         self.with_lm = with_lm
         self.with_lstm = with_lstm
-        self.context_feature_dim = context_feature_dim
 
         try:
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features

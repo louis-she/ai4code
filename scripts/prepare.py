@@ -52,15 +52,12 @@ def process(file):
     id = file.stem
     content = file.read_text()
     body = json.loads(content)
-    hash_object = hashlib.sha1(content.encode())
 
-    content_sha1 = hash_object.hexdigest()
     content_len = len(content)
     markdown_count = 0
     code_count = 0
 
     cell_keys = list(body['cell_type'].keys())
-    cell_sha1s = {}
     cell_lens = {}
     cell_ranks = {}
     cell_types = body['cell_type']
@@ -75,8 +72,6 @@ def process(file):
         else:
             print(f"Unknown type {type}, ignore")
         source = body['source'][key]
-        hash_object = hashlib.sha1(source.encode())
-        cell_sha1s[key] = hash_object.hexdigest()
         cell_lens[key] = len(source)
 
     cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
@@ -131,10 +126,8 @@ def process(file):
         orders=orders_dict[id],
         markdown_cell_count=markdown_count,
         code_cell_count=code_count,
-        content_sha1=content_sha1,
         content_len=content_len,
         cell_keys=list(cell_keys),
-        cell_sha1s=cell_sha1s,
         cell_lens=cell_lens,
         cell_ranks=cell_ranks,
         cell_ranks_normed=cell_ranks_normed,
@@ -147,12 +140,12 @@ def process(file):
         mean_markdown_lens=mean_markdown_lens,
         percentile_code_lens=percentile_code_lens,
         mean_code_lens=mean_code_lens,
-        percentile_cell_ids_lens=percentile_cell_ids_lens,
-        mean_cell_ids_lens=mean_cell_ids_lens,
-        percentile_markdown_ids_lens=percentile_markdown_ids_lens,
-        mean_markdown_ids_lens=mean_markdown_ids_lens,
-        percentile_code_ids_lens=percentile_code_ids_lens,
-        mean_code_ids_lens=mean_code_ids_lens,
+        # percentile_cell_ids_lens=percentile_cell_ids_lens,
+        # mean_cell_ids_lens=mean_cell_ids_lens,
+        # percentile_markdown_ids_lens=percentile_markdown_ids_lens,
+        # mean_markdown_ids_lens=mean_markdown_ids_lens,
+        # percentile_code_ids_lens=percentile_code_ids_lens,
+        # mean_code_ids_lens=mean_code_ids_lens,
     )
     return sample
 
