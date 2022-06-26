@@ -25,4 +25,5 @@ metadata = """{
 
 Path("./kaggle_sync/dataset-metadata.json").write_text(metadata)
 os.system("ls -lht ./kaggle_sync")
+os.system("cat ./kaggle_sync/dataset-metadata.json")
 os.system("cd ./kaggle_sync && kaggle datasets version -m 'new'")
