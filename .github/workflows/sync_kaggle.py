@@ -14,7 +14,7 @@ os.makedirs("./kaggle_sync/", exist_ok=True)
 make_tarfile("./kaggle_sync/code.tar.gz", f"{os.getenv('GITHUB_WORKSPACE')}/ai4code")
 metadata = """{
   "title": "chenglu_ai4code_source",
-  "id": "snaker/ai4code",
+  "id": "snaker/chenglu-ai4code-source",
   "licenses": [
     {
       "name": "CC0-1.0"
