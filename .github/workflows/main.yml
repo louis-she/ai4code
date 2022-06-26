@@ -19,6 +19,10 @@ jobs:
 
       - name: Setup Python
         uses: actions/setup-python@v4.0.0
+        with:
+          python-version: '3.7'
 
       - name: Upload
-        run: python ${GITHUB_WORKSPACE}/ai4code/.github/workflows/sync_kaggle.py
+        run: |
+          pip install --upgrade kaggle
+          python ${GITHUB_WORKSPACE}/.github/workflows/sync_kaggle.py

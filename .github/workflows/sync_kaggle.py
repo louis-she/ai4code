@@ -2,6 +2,7 @@ from genericpath import exists
 import os
 import tarfile
 import os.path
+from pathlib import Path
 
 
 def make_tarfile(output_filename, source_dir):
@@ -12,7 +13,7 @@ def make_tarfile(output_filename, source_dir):
 os.makedirs("./kaggle_sync/", exist_ok=True)
 make_tarfile("./kaggle_sync/code.tar.gz", f"{os.getenv('GITHUB_WORKSPACE')}/ai4code")
 metadata = """{
-  "title": "ai4code",
+  "title": "chenglu_ai4code_source",
   "id": "snaker/ai4code",
   "licenses": [
     {
@@ -22,5 +23,6 @@ metadata = """{
 }
 """
 
-open("./kaggle_sync/dataset-metadata.json", "w").write(metadata)
-os.system("cd ./kaggle_sync && kaggle datasets create")
+Path("./kaggle_sync/dataset-metadata.json").write_text(metadata)
+os.system("ls -lht ./kaggle_sync")
+os.system("cd ./kaggle_sync && kaggle datasets version -m 'new'")
