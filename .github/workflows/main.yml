@@ -2,7 +2,8 @@ name: Push to Kaggle Dataset
 
 on:
   release:
-    types: [published]
+    types:
+      - created
 
 env:
   KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
@@ -15,14 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: tar
-        run: tar -zcvf ai4code ai4code.tar.gz
-
       - name: prepare tarball
         run: |
-          mkdir dataset
-          tar -zcvf ai4code ai4code.tar.gz
-          
+          tar -zcvf ai4code.tar.gz $GITHUB_WORKSPACE/ai4code
+
       - name: upload
         uses: jaimevalero/push-kaggle-dataset@v3
         with:
