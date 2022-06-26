@@ -65,7 +65,7 @@ def main(
     now = time.time()
     with torch.no_grad():
         for i, batch in enumerate(tqdm(loader)):
-            input_ids, mask, _, _, _, _ = batch
+            input_ids, mask, _, _, _, _, _ = batch
             _ = model(input_ids.cuda(), mask.cuda(), lm=False)
     spent = time.time() - now
     print(spent / 10.64, "小时")
