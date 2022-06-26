@@ -14,16 +14,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - name: prepare tarball
-        run: |
-          tar -zcvf ai4code.tar.gz $GITHUB_WORKSPACE/ai4code
+      - name: Setup Python
+        uses: actions/setup-python@v4.0.0
 
-      - name: upload
-        uses: jaimevalero/push-kaggle-dataset@v3
-        with:
-          id: snaker/ai4code
-          name: ai4code_source
-          files: ai4code.tar.gz
-          is_public: false
+      - name: Upload
+        run: python ${GITHUB_WORKSPACE}/ai4code/.github/workflows/sync_kaggle.py
