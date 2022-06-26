@@ -1,9 +1,9 @@
 name: Push to Kaggle Dataset
 
 on:
-  release:
-    types:
-      - created
+  push:
+    branches:
+      - master
 
 env:
   KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
