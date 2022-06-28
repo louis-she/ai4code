@@ -82,7 +82,7 @@ def process(file):
 
     cell_encodes = {}
     for cell_key, value in body["source"].items():
-        processor = getattr(datasets, processor_suffix)
+        processor = getattr(datasets.preprocessor, processor_suffix)
         value = processor(value, cell_types[cell_key])
         cell_encodes[cell_key] = tokenizer.encode(value, add_special_tokens=False)
 

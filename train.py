@@ -342,7 +342,8 @@ def main(
                 )
             )
 
-    metrics.KendallTauWithSplits(val_data, split_len).attach(evaluator, "kendall_tau")
+    metric = metrics.KendallTauWithSplits(val_data, split_len)
+    metric.attach(evaluator, "kendall_tau")
 
     # scheduler
     if with_scheduler:
@@ -367,6 +368,7 @@ def main(
         "optimizer": optimizer,
         "scaler": scaler,
         "params": params,
+        "metric": metric
     }
 
     if with_scheduler:

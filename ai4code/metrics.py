@@ -1,9 +1,10 @@
 from bisect import bisect
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 import pickle
-from typing import Dict
+from typing import Dict, Mapping
 from ignite.metrics import Metric
 import ignite.distributed as idist
+from ignite.base.mixins import Serializable
 import torch
 import torch.distributed as dist
 
@@ -98,7 +99,8 @@ class KendallTauNaive(Metric):
         return score
 
 
-class KendallTauWithSplits(Metric):
+class KendallTauWithSplits(Serializable, Metric):
+
     def __init__(self, val_data: Dict[str, Sample], split_len):
         super().__init__()
         self.val_data = val_data
@@ -110,6 +112,13 @@ class KendallTauWithSplits(Metric):
         self._all_targets = []
         self._raw_preds = {}
         self._predictions = []
+
+    def state_dict(self) -> Dict:
+        return self._raw_preds
+
+    def load_state_dict(self, state_dict: Mapping) -> None:
+        super().load_state_dict(state_dict)
+        self._raw_preds = state_dict
 
     def update(self, output):
         loss, in_splits, ranks, sample_ids, cell_ids, split_ids = output
@@ -137,21 +146,19 @@ class KendallTauWithSplits(Metric):
                 cell_rank = sample.cell_ranks[cell_key]
                 if cell_type == "code":
                     # keep the original cell_rank
-                    item = (cell_key, cell_rank)
+                    item = (cell_key, cell_rank, sample.id)
                 else:
                     # markdown cell，选出 in_split 得分最高的，取 rank + split_offset
                     item = (cell_key, all_predictions_dict[sample.id][cell_key])
-                    split_results = all_predictions_dict[sample.id][cell_key]
-
-                    max_in_split_score = -float('inf')
-                    in_split_result = None
-                    for split_id, result in split_results.items():
-                        if result[0] > max_in_split_score:
+                    split_results = all_predictions_dict[sample.id][cell_key].items()
+                    in_split_result = split_results[0][1]
+                    for split_id, result in split_results[1:]:
+                        if result[0] > in_split_result[0]:
                             in_split_result = result
-                            max_in_split_score = result[0]
-                    rank_normed, split_id = in_split_result[1], in_split_result[3]
+
+                    in_split_score, rank_normed, sample_id, split_id = in_split_result[1], in_split_result[3]
                     cell_rank = rank_normed * (self.split_len + 1) + (split_id * self.split_len)
-                    item = (cell_key, cell_rank, max_in_split_score)
+                    item = (cell_key, cell_rank, in_split_score, rank_normed, sample_id, split_id)
 
                 all_preds.append(item)
             cell_id_predicted = [
