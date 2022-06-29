@@ -359,7 +359,10 @@ def main(
 
         @trainer.on(Events.ITERATION_COMPLETED)
         def step_scheduler(engine):
-            scheduler.step()
+            try:
+                scheduler.step()
+            except ValueError:
+                pass
 
     # checkpoint
     objects_to_checkpoint = {
