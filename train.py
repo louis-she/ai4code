@@ -173,7 +173,7 @@ def main(
         with_lm=pair_lm,
         with_lstm=with_lstm,
         dropout=dropout,
-        context_feature_dim=74 if with_context_feature else None,
+        with_context_feature=with_context_feature,
     )
 
     if with_swa:

@@ -150,13 +150,13 @@ class KendallTauWithSplits(Serializable, Metric):
                 else:
                     # markdown cell，选出 in_split 得分最高的，取 rank + split_offset
                     item = (cell_key, all_predictions_dict[sample.id][cell_key])
-                    split_results = all_predictions_dict[sample.id][cell_key].items()
+                    split_results = list(all_predictions_dict[sample.id][cell_key].items())
                     in_split_result = split_results[0][1]
                     for split_id, result in split_results[1:]:
                         if result[0] > in_split_result[0]:
                             in_split_result = result
 
-                    in_split_score, rank_normed, sample_id, split_id = in_split_result[1], in_split_result[3]
+                    in_split_score, rank_normed, sample_id, split_id = in_split_result
                     cell_rank = rank_normed * (self.split_len + 1) + (split_id * self.split_len)
                     item = (cell_key, cell_rank, in_split_score, rank_normed, sample_id, split_id)
 
