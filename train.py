@@ -71,6 +71,7 @@ def main(
     dropout: float = 0.2,
     distil_context: str = None,
     adversarial: Tuple[str, int, int] = None,  # type, start iteration, stride iteration
+    do_evaluation: bool = False,
 ):
     rank = idist.get_local_rank()
     params = SerializableDict(locals())
@@ -416,7 +417,10 @@ def main(
         if testing:
             exit(0)
 
-    trainer.run(get_next_loader(), max_epochs=max_epochs)
+    if not do_evaluation:
+        trainer.run(get_next_loader(), max_epochs=max_epochs)
+    else:
+        evaluator.run(val_loader)
     idist.finalize()
 
 
