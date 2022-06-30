@@ -99,7 +99,7 @@ def main(
         val_data = {
             **pickle.load(
                 open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{i}.pkl", "rb")
-            )
+            ),
             **val_data,
         }
 
