@@ -93,9 +93,15 @@ def main(
             f"Code dir {code_dir} exists! use --override to force override it or change another code name"
         )
 
-    val_data = pickle.load(
-        open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/0.pkl", "rb")
-    )
+    val_data = {}
+    for i in val_folds:
+        val_data = {
+            **pickle.load(
+                open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{i}.pkl", "rb")
+            )
+            **val_data,
+        }
+
     if val_num_samples is not None:
         val_data = {k: v for k, v in list(val_data.items())[:val_num_samples]}
 
