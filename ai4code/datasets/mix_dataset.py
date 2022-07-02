@@ -121,9 +121,10 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
         # start_rank: 1 or 9 or 17 ...
-        offset = sample.cell_ranks[context_cell_keys[0]]
-        rank = sample.cell_ranks[cell_key] + 1 - offset
-        rank_normed = rank / (self.split_len + 1)
+        offset = int(sample.cell_ranks[context_cell_keys[0]])
+        rank = sample.cell_ranks[cell_key] - offset
+        rank_normed = math.log(rank)
+
         in_split = float(rank_normed > 0 and rank_normed < 1)
 
         # 8 + 6 * 11 = 74
