@@ -49,9 +49,23 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             context_cell_keys = self.context_cells_keys[sample.id]
             available_splits_num = math.ceil(len(context_cell_keys) / self.split_len)
             for split_id in range(available_splits_num):
+                # 获取所有之前的 context_keys, 找出最后一个 code cell 的 rank，作为该 split 的 rank_offset
+                rank_offset = 0
+                previous_context_keys = context_cell_keys[
+                    0 : self.split_len * split_id
+                ]
+                previous_code_context_keys = [
+                    key
+                    for key in previous_context_keys
+                    if sample.cell_types[key] == "code"
+                ]
+                if len(previous_code_context_keys) > 0:
+                    rank_offset = sample.cell_ranks[previous_code_context_keys[-1]]
                 for cell_key in sample.cell_keys:
                     if sample.cell_types[cell_key] == "markdown":
-                        self.all_cells.append((sample.id, cell_key, split_id))
+                        self.all_cells.append(
+                            (sample.id, cell_key, split_id, rank_offset)
+                        )
 
         if not self.only_task_data:
             self.all_cell_pairs = []
@@ -75,7 +89,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             return sample.cell_encodes[cell_key]
 
     def get_task_data(self, index):
-        sample_id, cell_key, split_id = self.all_cells[index]
+        sample_id, cell_key, split_id, rank_offset = self.all_cells[index]
         sample = self.data[sample_id]
 
         anchor_encode = self.get_encode(sample, cell_key)[: self.anchor_size]
@@ -120,30 +134,29 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         input_ids += [self.special_tokens.pad_token_id] * pad_len
         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
-        # start_rank: 1 or 9 or 17 ...
-        offset = int(sample.cell_ranks[context_cell_keys[0]])
-        rank = sample.cell_ranks[cell_key] - offset
-        rank_normed = math.log(rank)
-
-        in_split = float(rank_normed > 0 and rank_normed < 1)
+        rank = sample.cell_ranks[cell_key] - rank_offset
+        rank_normed = math.log(rank) if rank > 0 else 0
+        in_split = rank > 0 and rank < self.split_len + 1
 
         # 8 + 6 * 11 = 74
-        context_feature = np.array([
-            sample.markdown_cell_count,
-            sample.code_cell_count,
-            *sample.percentile_cell_lens,
-            sample.mean_cell_lens,
-            *sample.percentile_markdown_lens,
-            sample.mean_markdown_lens,
-            *sample.percentile_code_lens,
-            sample.mean_code_lens,
-            # *sample.percentile_cell_ids_lens,
-            # sample.mean_cell_ids_lens,
-            # *sample.percentile_markdown_ids_lens,
-            # sample.mean_markdown_ids_lens,
-            # *sample.percentile_code_ids_lens,
-            # sample.mean_code_ids_lens
-        ])
+        context_feature = np.array(
+            [
+                sample.markdown_cell_count,
+                sample.code_cell_count,
+                *sample.percentile_cell_lens,
+                sample.mean_cell_lens,
+                *sample.percentile_markdown_lens,
+                sample.mean_markdown_lens,
+                *sample.percentile_code_lens,
+                sample.mean_code_lens,
+                # *sample.percentile_cell_ids_lens,
+                # sample.mean_cell_ids_lens,
+                # *sample.percentile_markdown_ids_lens,
+                # sample.mean_markdown_ids_lens,
+                # *sample.percentile_code_ids_lens,
+                # sample.mean_code_ids_lens
+            ]
+        )
 
         context_feature[context_feature == 0] = 1e-5
         context_feature = np.log2(context_feature)
@@ -156,6 +169,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             sample_id,
             cell_key,
             split_id,
+            rank_offset,
         )
 
     def get_pair_data(self, index: int):
@@ -209,8 +223,38 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         )
 
     def __getitem__(self, index: int):
-        input_ids, mask, targets, context_feature, sample_id, cell_key, split_id  = self.get_task_data(index)
+        (
+            input_ids,
+            mask,
+            targets,
+            context_feature,
+            sample_id,
+            cell_key,
+            split_id,
+            rank_offset,
+        ) = self.get_task_data(index)
         if not self.only_task_data:
             lm_input_ids, lm_mask, lm_targets = self.get_pair_data(index)
-            return input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature, sample_id, cell_key, split_id
-        return input_ids, mask, targets, context_feature, sample_id, cell_key, split_id
+            return (
+                input_ids,
+                mask,
+                lm_input_ids,
+                lm_mask,
+                targets,
+                lm_targets,
+                context_feature,
+                sample_id,
+                cell_key,
+                split_id,
+                rank_offset,
+            )
+        return (
+            input_ids,
+            mask,
+            targets,
+            context_feature,
+            sample_id,
+            cell_key,
+            split_id,
+            rank_offset,
+        )

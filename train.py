@@ -312,7 +312,7 @@ def main(
         input_ids, mask, targets, context_feature = [
             item.to(device) for item in batch[:4]
         ]
-        sample_ids, cell_keys, split_ids = batch[4:]
+        sample_ids, cell_keys, split_ids, rank_offsets = batch[4:]
 
         in_split, rank = eval_model(
             input_ids, mask, lm=False, context_feature=context_feature
@@ -324,7 +324,7 @@ def main(
         )
         loss = cls_loss + rank_loss
 
-        return loss, in_split, rank, sample_ids, cell_keys, split_ids
+        return loss, in_split, rank, sample_ids, cell_keys, split_ids, rank_offsets
 
     trainer = Engine(train)
     evaluator = Engine(rank_eval)

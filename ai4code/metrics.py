@@ -1,5 +1,6 @@
 from bisect import bisect
 from collections import OrderedDict, defaultdict
+import math
 import pickle
 from typing import Dict, Mapping
 from ignite.metrics import Metric
@@ -121,9 +122,9 @@ class KendallTauWithSplits(Serializable, Metric):
         self._raw_preds = state_dict
 
     def update(self, output):
-        loss, in_splits, ranks, sample_ids, cell_ids, split_ids = output
-        for in_split, rank, sample_id, cell_id, split_id in zip(in_splits, ranks, sample_ids, cell_ids, split_ids):
-            self._predictions.append([in_split.item(), rank.item(), sample_id, cell_id, split_id.item()])
+        loss, in_splits, ranks, sample_ids, cell_ids, split_ids, rank_offsets = output
+        for in_split, rank, sample_id, cell_id, split_id, rank_offset in zip(in_splits, ranks, sample_ids, cell_ids, split_ids, rank_offsets):
+            self._predictions.append([in_split.item(), rank.item(), sample_id, cell_id, split_id.item(), rank_offset])
 
     def compute(self):
         if torch.distributed.is_initialized():
@@ -133,8 +134,8 @@ class KendallTauWithSplits(Serializable, Metric):
             all_predictions = [self._predictions]
 
         all_predictions_dict = defaultdict(lambda: defaultdict(dict))
-        for in_split, rank, sample_id, cell_id, split_id in [x for xs in all_predictions for x in xs]:
-            all_predictions_dict[sample_id][cell_id][split_id] = [in_split, rank, sample_id, split_id]
+        for in_split, rank, sample_id, cell_id, split_id, rank_offset in [x for xs in all_predictions for x in xs]:
+            all_predictions_dict[sample_id][cell_id][split_id] = [in_split, rank, sample_id, split_id, rank_offset]
 
         if torch.distributed.is_initialized() and idist.get_local_rank() != 0:
             return
@@ -156,8 +157,8 @@ class KendallTauWithSplits(Serializable, Metric):
                         if result[0] > in_split_result[0]:
                             in_split_result = result
 
-                    in_split_score, rank_normed, sample_id, split_id = in_split_result
-                    cell_rank = rank_normed * (self.split_len + 1) + (split_id * self.split_len)
+                    in_split_score, rank_normed, sample_id, split_id, rank_offset = in_split_result
+                    cell_rank = math.e**rank_normed + rank_offset
                     item = (cell_key, cell_rank, in_split_score, rank_normed, sample_id, split_id)
 
                 all_preds.append(item)
