@@ -394,7 +394,6 @@ def main(
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _replace_dataloader(engine):
-        return
         loader = get_next_loader()
         engine.set_data(get_next_loader())
         engine.state.epoch_length = len(loader)
@@ -433,6 +432,11 @@ def main(
         trainer.run(get_next_loader(), max_epochs=max_epochs)
     else:
         evaluator.run(val_loader)
+
+    @evaluator.on(Events.COMPLETED)
+    def _free_mem(engine):
+        metric.reset()
+
     idist.finalize()
     if rank == 0:
         wandb.close()
