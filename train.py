@@ -1,3 +1,4 @@
+import gc
 import os
 import pickle
 from pathlib import Path
@@ -146,22 +147,6 @@ def main(
             create_dataset(train_data),
             batch_size=batch_size,
             shuffle=True,
-        )
-
-    def get_next_lm_loader():
-        nonlocal current_lm_fold_idx
-        fold = train_folds[current_train_fold_idx % len(train_folds)]
-        lm_train_data = pickle.load(
-            open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb")
-        )
-        current_lm_fold_idx += 1
-
-        return iter(
-            idist.auto_dataloader(
-                datasets.PairLMDataset(lm_train_data, special_tokens, max_len),
-                batch_size=batch_size,
-                shuffle=True,
-            )
         )
 
     val_loader = idist.auto_dataloader(
@@ -369,7 +354,7 @@ def main(
 
         @trainer.on(Events.ITERATION_COMPLETED(every=50))
         def step_scheduler(engine):
-            if rank == 0:
+            if rank == 0 and wandb:
                 wandb.log({"lr": scheduler.get_lr()[0]}, step=trainer.state.iteration)
 
 
@@ -410,15 +395,16 @@ def main(
     @trainer.on(Events.EPOCH_COMPLETED)
     def _replace_dataloader(engine):
         loader = get_next_loader()
-        engine.state.dataloader = loader
+        engine.set_data(get_next_loader())
         engine.state.epoch_length = len(loader)
-        engine._setup_dataloader_iter()
+        gc.collect()
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _testing_quit(engine):
         if testing:
             exit(0)
 
+    wandb = None
     if rank == 0 and not testing and len(git_commit) == 40:
         wandb = wandb_logger.WandBLogger(
             project="ai4code",
