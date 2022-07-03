@@ -3,3 +3,4 @@ aim
 pytorch-ignite
 transformers
 nltk
+wandb

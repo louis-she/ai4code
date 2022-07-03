@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 from termcolor import colored
 import random
+from ignite.contrib.handlers import wandb_logger
 
 import fire
 import torch
@@ -371,6 +372,12 @@ def main(
             except ValueError:
                 pass
 
+        @trainer.on(Events.ITERATION_COMPLETED(every=50))
+        def step_scheduler(engine):
+            if rank == 0:
+                wandb.log({"lr": scheduler.get_lr()[0]}, step=trainer.state.iteration)
+
+
     # checkpoint
     objects_to_checkpoint = {
         "trainer": trainer,
@@ -417,11 +424,36 @@ def main(
         if testing:
             exit(0)
 
+    if rank == 0 and not testing and len(git_commit) == 40:
+        wandb = wandb_logger.WandBLogger(
+            project="ai4code",
+            entity="chenglu",
+            name=code,
+            config=params,
+        )
+
+        wandb.attach_output_handler(
+            trainer,
+            event_name=Events.ITERATION_COMPLETED,
+            tag="training",
+            output_transform=lambda loss: {"loss": loss[0], "cls_loss": loss[1], "rank_loss": loss[2], "lm_loss": loss[3]}
+        )
+
+        wandb.attach_output_handler(
+            evaluator,
+            event_name=Events.EPOCH_COMPLETED,
+            tag="validation",
+            metric_names=["kendall_tau"],
+            global_step_transform=lambda *_: trainer.state.iteration,
+        )
+
     if not do_evaluation:
         trainer.run(get_next_loader(), max_epochs=max_epochs)
     else:
         evaluator.run(val_loader)
     idist.finalize()
+    if rank == 0:
+        wandb.close()
 
 
 def spawn(local_rank):
