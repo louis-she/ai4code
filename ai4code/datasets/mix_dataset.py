@@ -164,7 +164,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         return (
             torch.tensor(input_ids).long(),
             torch.tensor(attention_mask).long(),
-            torch.tensor([in_split, rank_normed]),
+            torch.tensor([in_split, rank_normed]).float(),
             torch.tensor(context_feature).float(),
             sample_id,
             cell_key,

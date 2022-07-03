@@ -1,28 +1,22 @@
 import os
 import pickle
-from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Tuple
 from termcolor import colored
-import random
 from ignite.contrib.handlers import wandb_logger
 
 import fire
 import torch
 import torch.nn.functional as F
-from aim.pytorch_ignite import AimLogger
 from ignite.engine import Engine, Events
-from ignite.handlers import Checkpoint, DiskSaver, global_step_from_engine
+from ignite.handlers import Checkpoint, DiskSaver
 from ignite.metrics import RunningAverage
 from torch import optim
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.data import DataLoader
-from transformers import AdamW, AutoTokenizer
 
 import ai4code
 from ai4code import datasets, metrics, models, utils
 from ai4code.utils import SerializableDict
-from ai4code.adversarial import AWP, FGM
 import ignite.distributed as idist
 from torch.optim.swa_utils import AveragedModel
 from transformers import logging
@@ -249,7 +243,8 @@ def main(
 
             valid_ranks = targets[:, 0] == 1
             if valid_ranks.sum().item() == 0:
-                rank_loss = rank_criterion(rank[0:1].squeeze(1), targets[0:1, 1])
+                # 没有 valid 不能设置 rank_loss 为 0，否则 ddp 训练会报 grad 为空的错误
+                rank_loss = rank_criterion(rank[0:1].squeeze(1), targets[0:1, 1]) * 1e-7
             else:
                 rank_loss = rank_criterion(
                     rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
