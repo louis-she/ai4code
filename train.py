@@ -394,6 +394,7 @@ def main(
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _replace_dataloader(engine):
+        return
         loader = get_next_loader()
         engine.set_data(get_next_loader())
         engine.state.epoch_length = len(loader)
