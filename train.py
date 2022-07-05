@@ -184,6 +184,8 @@ def main(
                 print(colored(f"Still a error raised: {e}, will try to load only the transformers weights", "red"))
                 weights = {k: v for k, v in weights.items() if k.startswith("backbone")}
                 model.load_state_dict(weights, strict=False)
+        del state
+        del weights
 
     model = idist.auto_model(model)
 
@@ -335,12 +337,12 @@ def main(
 
     # scheduler
     if with_scheduler:
-        train_loader = get_next_loader()
+        iter_of_epoch = 9000 * 128 / batch_size
         reset_fold_idx()
         scheduler = OneCycleLR(
             optimizer,
             max_lr=lr,
-            total_steps=len(train_loader) * max_epochs,
+            total_steps=iter_of_epoch * max_epochs,
             pct_start=0.01,
             final_div_factor=10,
         )
