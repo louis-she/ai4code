@@ -337,7 +337,7 @@ def main(
 
     # scheduler
     if with_scheduler:
-        iter_of_epoch = 9000 * 128 / batch_size
+        iter_of_epoch = 9000 * 128 // batch_size
         reset_fold_idx()
         scheduler = OneCycleLR(
             optimizer,
