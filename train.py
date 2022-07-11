@@ -57,7 +57,6 @@ def main(
     split_len: int = 8,
     accumulation_steps: int = 1,
     pair_lm: bool = True,
-    with_context_feature: bool = False,
     with_swa: bool = False,
     # dataset temp
     anchor_size: int = 64,
@@ -160,7 +159,6 @@ def main(
         with_lm=pair_lm,
         with_lstm=with_lstm,
         dropout=dropout,
-        with_context_feature=with_context_feature,
     )
 
     if with_swa:
@@ -204,22 +202,20 @@ def main(
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
 
     def forward_train_loss(
-        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature
+        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
     ):
         real_bs = input_ids.shape[0]
         # input_ids, mask, lm_input_ids, lm_mask: bs x 256
         input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
-        context_feature = torch.cat([context_feature, context_feature], dim=0)
         mask = torch.cat([mask, lm_mask], dim=0)
 
         shuffle_indices, unshuffle_indices = utils.shuffle_batch(input_ids)
         input_ids = input_ids[shuffle_indices]
-        context_feature = context_feature[shuffle_indices]
         mask = mask[shuffle_indices]
 
         with torch.cuda.amp.autocast(enabled=True):
             in_split, rank, lm_logits = model(
-                input_ids, mask, context_feature=context_feature
+                input_ids, mask
             )
 
             in_split = in_split[unshuffle_indices][:real_bs]
@@ -244,12 +240,12 @@ def main(
 
     def train(engine, batch):
         model.train()
-        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature = [
-            item.to(device) for item in batch[:7]
+        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
+            item.to(device) for item in batch[:6]
         ]
 
         loss, split_loss, rank_loss, lm_loss = forward_train_loss(
-            input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets, context_feature
+            input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
         )
         scaler.scale(loss).backward()
 
@@ -267,7 +263,6 @@ def main(
                 lm_mask,
                 targets,
                 lm_targets,
-                context_feature,
             )
             optimizer.zero_grad()
             scaler.scale(loss).backward()
@@ -292,13 +287,13 @@ def main(
     def rank_eval(engine, batch):
         eval_model = model if not with_swa else swa_model
         eval_model.eval()
-        input_ids, mask, targets, context_feature = [
-            item.to(device) for item in batch[:4]
+        input_ids, mask, targets = [
+            item.to(device) for item in batch[:3]
         ]
-        sample_ids, cell_keys, split_ids, rank_offsets = batch[4:]
+        sample_ids, cell_keys, split_ids, rank_offsets = batch[3:]
 
         in_split, rank = eval_model(
-            input_ids, mask, lm=False, context_feature=context_feature
+            input_ids, mask, lm=False
         )
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
         valid_ranks = targets[:, 0] == 1

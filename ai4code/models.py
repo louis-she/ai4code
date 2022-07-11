@@ -40,12 +40,8 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False, with_context_feature=False):
+    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False):
         super().__init__()
-        if with_context_feature:
-            self.context_feature_dim = 74
-        else:
-            self.context_feature_dim = None
         self.pretrained_path = pretrained_path
         try:
             self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False)
@@ -59,9 +55,6 @@ class MultiHeadModel(nn.Module):
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features
         except:
             out_features_num = 768
-
-        if self.context_feature_dim:
-            out_features_num += self.context_feature_dim
 
         self.classifier = nn.Sequential(
             nn.Linear(in_features=out_features_num, out_features=self.config.hidden_size),
@@ -89,7 +82,7 @@ class MultiHeadModel(nn.Module):
             self.lstm_1 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
             self.lstm_2 = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, batch_first=True, bidirectional=True)
 
-    def forward(self, x, mask, lm=True, context_feature=None):
+    def forward(self, x, mask, lm=True):
         output = self.backbone(x, mask)
         all_seq_features = output[0]  # (bs, seq_len, dim)
 
@@ -98,10 +91,7 @@ class MultiHeadModel(nn.Module):
             all_seq_features, _ = self.lstm_2(all_seq_features)
 
         last_seq_feature = all_seq_features[:, 0] # (bs, dim)
-        if self.context_feature_dim:
-            last_seq_context_feature = torch.cat([last_seq_feature, context_feature], dim=1)
-        else:
-            last_seq_context_feature = last_seq_feature
+        last_seq_context_feature = last_seq_feature
 
         if lm and self.with_lm:
             return self.classifier(last_seq_context_feature), self.ranker(last_seq_context_feature), self.lm(last_seq_feature)

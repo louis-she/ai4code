@@ -138,34 +138,10 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         rank_normed = math.log(rank) if rank > 0 else 0
         in_split = rank > 0 and rank < self.split_len + 1
 
-        # 8 + 6 * 11 = 74
-        context_feature = np.array(
-            [
-                sample.markdown_cell_count,
-                sample.code_cell_count,
-                *sample.percentile_cell_lens,
-                sample.mean_cell_lens,
-                *sample.percentile_markdown_lens,
-                sample.mean_markdown_lens,
-                *sample.percentile_code_lens,
-                sample.mean_code_lens,
-                # *sample.percentile_cell_ids_lens,
-                # sample.mean_cell_ids_lens,
-                # *sample.percentile_markdown_ids_lens,
-                # sample.mean_markdown_ids_lens,
-                # *sample.percentile_code_ids_lens,
-                # sample.mean_code_ids_lens
-            ]
-        )
-
-        context_feature[context_feature == 0] = 1e-5
-        context_feature = np.log2(context_feature)
-
         return (
             torch.tensor(input_ids).long(),
             torch.tensor(attention_mask).long(),
             torch.tensor([in_split, rank_normed]).float(),
-            torch.tensor(context_feature).float(),
             sample_id,
             cell_key,
             split_id,
@@ -227,7 +203,6 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             input_ids,
             mask,
             targets,
-            context_feature,
             sample_id,
             cell_key,
             split_id,
@@ -242,7 +217,6 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
                 lm_mask,
                 targets,
                 lm_targets,
-                context_feature,
                 sample_id,
                 cell_key,
                 split_id,
@@ -252,7 +226,6 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             input_ids,
             mask,
             targets,
-            context_feature,
             sample_id,
             cell_key,
             split_id,

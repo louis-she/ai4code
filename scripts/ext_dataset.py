@@ -53,9 +53,9 @@ def main(source: str, dest: str, gziped: bool = False):
                     sample['cell_type'][cell_id] = cell_type
                     sample['source'][cell_id] = cell_source
                 elif cell_type == "markdown":
-                    markdown_temp.append((cell_type, cell_source))
+                    markdown_temp.append((cell_id, cell_type, cell_source))
             random.shuffle(markdown_temp)
-            for cell_type, cell_source in markdown_temp:
+            for cell_id, cell_type, cell_source in markdown_temp:
                 sample['cell_type'][cell_id] = cell_type
                 sample['source'][cell_id] = cell_source
             with (train / (sample_id + ".json")).open("w") as f:
