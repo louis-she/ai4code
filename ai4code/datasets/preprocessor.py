@@ -70,10 +70,13 @@ def markdown_preprocess_v4(code):
 
 def no_markdown_special_v2(text):
     # 保留顶格的 + - * >, 删除其他的
-    text = text[0] + re.sub(r"(?<!\n)[\*\+\-\>]", " ", text[1:])
+    try:
+        text = text[0] + re.sub(r"(?<!\n)[\*\+\-\>]", " ", text[1:])
 
-    # 删除 ( ) [ ] ` ~ |
-    text = re.sub(r"\(\)\[\]\{\}\<\>\~\|\`\.", " ", text)
+        # 删除 ( ) [ ] ` ~ |
+        text = re.sub(r"\(\)\[\]\{\}\<\>\~\|\`\.", " ", text)
+    except IndexError:
+        return ""
     return text
 
 

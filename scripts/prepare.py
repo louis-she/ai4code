@@ -22,17 +22,21 @@ def get_ranks(cell_types, cell_orders, cell_keys):
     code_cell_orders = [cell_orders.index(cell_key) for cell_key in code_cell_keys]
 
     cell_ranks = {}
-    for k, (cell_type, cell_order, cell_key) in enumerate(zip(cell_types, cell_orders, cell_keys)):
-        cell_order = cell_orders.index(cell_key)
-        if cell_type == "code":
-            cell_ranks[cell_key] = k + 1
-            continue
-        for i, code_cell_order in enumerate(code_cell_orders):
-            if cell_order < code_cell_order:
-                code_bins[(i, i+1)].append((cell_order, cell_key))
-                break
-        else:
-            code_bins[(i+1, i+2)].append((cell_order, cell_key))
+    if len(code_cell_orders) != 0:
+        for k, (cell_type, cell_order, cell_key) in enumerate(zip(cell_types, cell_orders, cell_keys)):
+            cell_order = cell_orders.index(cell_key)
+            if cell_type == "code":
+                cell_ranks[cell_key] = k + 1
+                continue
+            for i, code_cell_order in enumerate(code_cell_orders):
+                if cell_order < code_cell_order:
+                    code_bins[(i, i+1)].append((cell_order, cell_key))
+                    break
+            else:
+                code_bins[(i+1, i+2)].append((cell_order, cell_key))
+    else:
+        for k, (cell_order, cell_key) in enumerate(zip(cell_orders, cell_keys)):
+            code_bins[(0, 1)].append((cell_order, cell_key))
 
     for bins, values in code_bins.items():
         markdowns_sorted = sorted(values, key=lambda x: x[0])
@@ -77,8 +81,8 @@ def process(file):
     cell_ranks = get_ranks([cell_types[k] for k in cell_keys], cell_orders, cell_keys)
     cell_ranks_norm_factor = code_count + 1
     cell_ranks_normed = {cell_id: (rank / cell_ranks_norm_factor) for cell_id, rank in cell_ranks.items()}
-    ancestor = ancestors_dict[id][0] if isinstance(ancestors_dict[id][0], str) else None
-    parent = ancestors_dict[id][1] if isinstance(ancestors_dict[id][1], str) else None
+    ancestor = ancestors_dict[id][0] if id in ancestors_dict and isinstance(ancestors_dict[id][0], str) else None
+    parent = ancestors_dict[id][1] if id in ancestors_dict and isinstance(ancestors_dict[id][1], str) else None
 
     cell_encodes = {}
     for cell_key, value in body["source"].items():
@@ -93,28 +97,6 @@ def process(file):
     cell_lens = np.array(list(cell_lens_dict.values()))
     percentile_cell_lens = [np.percentile(cell_lens, percentile) for percentile in range(0, 101, 10)]
     mean_cell_lens = cell_lens.mean()
-
-    markdown_lens = np.array([l for key, l in cell_lens_dict.items() if cell_types[key] == "markdown"])
-    percentile_markdown_lens = [np.percentile(markdown_lens, percentile) for percentile in range(0, 101, 10)]
-    mean_markdown_lens = markdown_lens.mean()
-
-    code_lens = np.array([l for key, l in cell_lens_dict.items() if cell_types[key] == "code"])
-    percentile_code_lens = [np.percentile(code_lens, percentile) for percentile in range(0, 101, 10)]
-    mean_code_lens = code_lens.mean()
-
-    cell_ids_lens_dict = {key: len(value) for key, value in cell_encodes.items()}
-
-    cell_ids_lens = np.array(list(cell_ids_lens_dict.values()))
-    percentile_cell_ids_lens = [np.percentile(cell_ids_lens, percentile) for percentile in range(0, 101, 10)]
-    mean_cell_ids_lens = cell_ids_lens.mean()
-
-    markdown_ids_lens = np.array([l for key, l in cell_ids_lens_dict.items() if cell_types[key] == "markdown"])
-    percentile_markdown_ids_lens = [np.percentile(markdown_ids_lens, percentile) for percentile in range(0, 101, 10)]
-    mean_markdown_ids_lens = markdown_ids_lens.mean()
-
-    code_ids_lens = np.array([l for key, l in cell_ids_lens_dict.items() if cell_types[key] == "code"])
-    percentile_code_ids_lens = [np.percentile(code_ids_lens, percentile) for percentile in range(0, 101, 10)]
-    mean_code_ids_lens = code_ids_lens.mean()
 
     cell_lens = np.array([len(x) for x in body['source'].values()])
 
@@ -136,16 +118,6 @@ def process(file):
         code_ratio=code_ratio,
         percentile_cell_lens=percentile_cell_lens,
         mean_cell_lens=mean_cell_lens,
-        percentile_markdown_lens=percentile_markdown_lens,
-        mean_markdown_lens=mean_markdown_lens,
-        percentile_code_lens=percentile_code_lens,
-        mean_code_lens=mean_code_lens,
-        # percentile_cell_ids_lens=percentile_cell_ids_lens,
-        # mean_cell_ids_lens=mean_cell_ids_lens,
-        # percentile_markdown_ids_lens=percentile_markdown_ids_lens,
-        # mean_markdown_ids_lens=mean_markdown_ids_lens,
-        # percentile_code_ids_lens=percentile_code_ids_lens,
-        # mean_code_ids_lens=mean_code_ids_lens,
     )
     return sample
 
@@ -154,19 +126,24 @@ def main(
     suffix: str,
     pretrained_tokenizer: str,
     processor: str = None,
+    root: str = "/home/featurize/data"
 ):
     global orders_dict, ancestors_dict, tokenizer, processor_suffix
     if processor is None:
         processor = suffix
     processor_suffix = f"preprocessor_{processor}"
-    dataset_root = Path("/home/featurize/data")
-    ancestors = pd.read_csv(dataset_root / "train_ancestors.csv")
+    dataset_root = Path(root)
+    try:
+        ancestors = pd.read_csv(dataset_root / "train_ancestors.csv")
+        ancestors_dict = {}
+        for _, item in ancestors.iterrows():
+            ancestors_dict[item.id] = (item.ancestor_id, item.parent_id)
+    except:
+        ancestors_dict = {}
 
-    ancestors_dict = {}
-    for _, item in ancestors.iterrows():
-        ancestors_dict[item.id] = (item.ancestor_id, item.parent_id)
 
     orders = pd.read_csv(dataset_root / "train_orders.csv")
+    orders.fillna('', inplace=True)
 
     orders_dict = {}
     for _, item in orders.iterrows():
@@ -185,15 +162,19 @@ def main(
 
     all_data = {sample.id: sample for sample in results}
 
-    ancestors = list(set(map(lambda x: x.ancestor, all_data.values())))
+    if len(ancestors_dict) > 0:
+        ancestors = list(set(map(lambda x: x.ancestor, all_data.values())))
 
-    kf = KFold(n_splits=10, shuffle=True, random_state=777)
+        kf = KFold(n_splits=10, shuffle=True, random_state=777)
 
-    for fold, (train_inds, val_inds) in enumerate(kf.split(ancestors)):
-        val_ancestors = set(ancestors[ind] for ind in val_inds)
-        for id, sample in all_data.items():
-            if sample.ancestor in val_ancestors:
-                all_data[id].fold = fold
+        for fold, (train_inds, val_inds) in enumerate(kf.split(ancestors)):
+            val_ancestors = set(ancestors[ind] for ind in val_inds)
+            for id, sample in all_data.items():
+                if sample.ancestor in val_ancestors:
+                    all_data[id].fold = fold
+    else:
+        for k, (id, sample) in enumerate(all_data.items()):
+            all_data[id].fold = k // 10000
 
     os.makedirs(f"/home/featurize/work/ai4code/data/{suffix}", exist_ok=True)
     for i in range(10):
@@ -205,9 +186,6 @@ def main(
         mini_fold = [sample for sample in all_data.values() if sample.fold == fold][:100]
         for sample in mini_fold:
             mini_data[sample.id] = sample
-
-    assert len(mini_data) == 1000
-    assert len([sample for sample in mini_data.values() if sample.fold == 0]) == 100
 
     pickle.dump(mini_data, open(f"/home/featurize/work/ai4code/data/{suffix}/mini.{suffix}.pkl", "wb"))
 

@@ -25,12 +25,6 @@ class Sample:
     percentile_cell_lens: List[float]
     mean_cell_lens: float
 
-    percentile_markdown_lens: List[float]
-    mean_markdown_lens: List[float]
-
-    percentile_code_lens: List[float]
-    mean_code_lens: List[float]
-
     # data split
     fold: Optional[int] = None
 
