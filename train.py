@@ -114,7 +114,6 @@ def main(
     )
 
     current_train_fold_idx = 0
-    current_lm_fold_idx = 0
 
     def create_dataset(data, only_task_data=False):
         return datasets.MixedDatasetWithSplits(
@@ -130,6 +129,8 @@ def main(
     def get_next_loader():
         nonlocal current_train_fold_idx
         fold = train_folds[current_train_fold_idx % len(train_folds)]
+        if rank == 0:
+            print(colored(f"generate fold data {fold}", "green"))
         with open(f"/home/featurize/work/ai4code/data/{fold}", "rb") as f:
             train_data = pickle.load(f)
         if train_num_samples is not None:
@@ -204,18 +205,14 @@ def main(
         input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
         mask = torch.cat([mask, lm_mask], dim=0)
 
-        shuffle_indices, unshuffle_indices = utils.shuffle_batch(input_ids)
-        input_ids = input_ids[shuffle_indices]
-        mask = mask[shuffle_indices]
-
         with torch.cuda.amp.autocast(enabled=True):
             in_split, rank, lm_logits = model(
                 input_ids, mask
             )
 
-            in_split = in_split[unshuffle_indices][:real_bs]
-            rank = rank[unshuffle_indices][:real_bs]
-            lm_logits = lm_logits[unshuffle_indices][real_bs:]
+            in_split = in_split[:real_bs]
+            rank = rank[:real_bs]
+            lm_logits = lm_logits[real_bs:]
 
             split_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
 
@@ -331,8 +328,8 @@ def main(
             optimizer,
             max_lr=lr,
             base_lr=lr * 0.03,
-            step_size_up=1e3,
-            step_size_down=1e4,
+            step_size_up=2e3,
+            step_size_down=2e4,
             cycle_momentum=False,
         )
         @trainer.on(Events.ITERATION_COMPLETED)
