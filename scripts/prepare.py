@@ -177,9 +177,13 @@ def main(
             all_data[id].fold = k // 10000
 
     os.makedirs(f"/home/featurize/work/ai4code/data/{suffix}", exist_ok=True)
-    for i in range(10):
+    i = 0
+    while True:
         fold_data = {k: v for k, v in list(all_data.items()) if v.fold == i}
+        if len(fold_data) == 0:
+            break
         pickle.dump(fold_data, open(f"/home/featurize/work/ai4code/data/{suffix}/{i}.pkl", "wb"))
+        i += 1
 
     mini_data = {}
     for fold in range(10):

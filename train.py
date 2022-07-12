@@ -2,6 +2,7 @@ import gc
 import os
 import pickle
 from pathlib import Path
+import random
 from typing import Tuple
 from termcolor import colored
 from ignite.contrib.handlers import wandb_logger
@@ -49,9 +50,9 @@ def main(
     testing: bool = False,
     saving_checkpoint: bool = True,
     num_workers: int = 2,
-    train_folds: Tuple[int] = (1,),
+    train_folds: Tuple[str] = ("1",),
     val_folds: Tuple[int] = (0,),
-    evaluate_every: int = 1,
+    evaluate_every: int = 1e4,
     with_scheduler: bool = False,
     with_lstm: bool = False,
     split_len: int = 8,
@@ -75,7 +76,9 @@ def main(
     torch.manual_seed(seed)
     device = idist.device()
 
+    train_folds = train_folds.split(",")
     max_epochs = max_epochs * len(train_folds)
+    random.shuffle(train_folds)
 
     if testing:
         train_num_samples = 20
@@ -113,11 +116,6 @@ def main(
     current_train_fold_idx = 0
     current_lm_fold_idx = 0
 
-    def reset_fold_idx():
-        nonlocal current_train_fold_idx, current_lm_fold_idx
-        current_train_fold_idx = 0
-        current_lm_fold_idx = 0
-
     def create_dataset(data, only_task_data=False):
         return datasets.MixedDatasetWithSplits(
             data,
@@ -132,11 +130,8 @@ def main(
     def get_next_loader():
         nonlocal current_train_fold_idx
         fold = train_folds[current_train_fold_idx % len(train_folds)]
-        if rank == 0:
-            print(colored(f"generate loader of fold {fold}", "green"))
-        train_data = pickle.load(
-            open(f"/home/featurize/work/ai4code/data/{dataset_suffix}/{fold}.pkl", "rb")
-        )
+        with open(f"/home/featurize/work/ai4code/data/{fold}", "rb") as f:
+            train_data = pickle.load(f)
         if train_num_samples is not None:
             train_data = {k: v for k, v in list(train_data.items())[:train_num_samples]}
 
@@ -332,16 +327,14 @@ def main(
 
     # scheduler
     if with_scheduler:
-        iter_of_epoch = 12000 * 128 // batch_size
-        reset_fold_idx()
-        scheduler = OneCycleLR(
+        scheduler = torch.optim.lr_scheduler.CyclicLR(
             optimizer,
             max_lr=lr,
-            total_steps=iter_of_epoch * max_epochs,
-            pct_start=0.01,
-            final_div_factor=10,
+            base_lr=lr * 0.03,
+            step_size_up=1e3,
+            step_size_down=1e4,
+            cycle_momentum=False,
         )
-
         @trainer.on(Events.ITERATION_COMPLETED)
         def step_scheduler(engine):
             try:
@@ -353,7 +346,6 @@ def main(
         def step_scheduler(engine):
             if rank == 0 and wandb:
                 wandb.log({"lr": scheduler.get_lr()[0]}, step=trainer.state.iteration)
-
 
     # checkpoint
     objects_to_checkpoint = {
@@ -373,28 +365,27 @@ def main(
         save_handler=DiskSaver(code_dir, require_empty=False),
         n_saved=3,
         score_name="kendall_tau",
-        global_step_transform=lambda *_: trainer.state.epoch,
+        global_step_transform=lambda *_: trainer.state.iteration,
     )
     if rank == 0 and not testing and saving_checkpoint:
         evaluator.add_event_handler(Events.EPOCH_COMPLETED, checkpoint)
     if resume:
         Checkpoint.load_objects(objects_to_checkpoint, torch.load(resume))
 
-    @trainer.on(Events.EPOCH_COMPLETED(every=evaluate_every))
+    @trainer.on(Events.ITERATION_COMPLETED(every=evaluate_every))
     def _evaluate_loss(engine: Engine):
         evaluator.run(val_loader)
 
     @trainer.on(Events.COMPLETED)
     def _evaluate_loss(engine: Engine):
-        if engine.state.epoch % evaluate_every != 0:
-            evaluator.run(val_loader)
+        logging.info("training ended, now run one last evaluation")
+        evaluator.run(val_loader)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _replace_dataloader(engine):
         loader = get_next_loader()
         engine.set_data(get_next_loader())
         engine.state.epoch_length = len(loader)
-        gc.collect()
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def _testing_quit(engine):
