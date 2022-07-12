@@ -47,7 +47,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             }
         for sample in list(self.data.values()):
             context_cell_keys = self.context_cells_keys[sample.id]
-            available_splits_num = math.ceil(len(context_cell_keys) / self.split_len)
+            available_splits_num = max(1, math.ceil(len(context_cell_keys) / self.split_len))
             for split_id in range(available_splits_num):
                 # 获取所有之前的 context_keys, 找出最后一个 code cell 的 rank，作为该 split 的 rank_offset
                 rank_offset = 0
@@ -135,7 +135,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
         rank = sample.cell_ranks[cell_key] - rank_offset
-        rank_normed = math.log(rank) if rank > 0 else 0
+        rank_normed = math.log(rank) if rank > 0 else -10
         in_split = rank > 0 and rank < self.split_len + 1
 
         return (
