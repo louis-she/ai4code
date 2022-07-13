@@ -236,9 +236,13 @@ def main(
             item.to(device) for item in batch[:6]
         ]
 
-        loss, split_loss, rank_loss, lm_loss = forward_train_loss(
-            input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
-        )
+        try:
+            loss, split_loss, rank_loss, lm_loss = forward_train_loss(
+                input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
+            )
+        except Exception as e:
+            print(batch[6])
+            raise e
         scaler.scale(loss).backward()
 
         if (
