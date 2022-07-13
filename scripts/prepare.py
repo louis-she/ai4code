@@ -164,9 +164,7 @@ def main(
 
     if len(ancestors_dict) > 0:
         ancestors = list(set(map(lambda x: x.ancestor, all_data.values())))
-
         kf = KFold(n_splits=10, shuffle=True, random_state=777)
-
         for fold, (train_inds, val_inds) in enumerate(kf.split(ancestors)):
             val_ancestors = set(ancestors[ind] for ind in val_inds)
             for id, sample in all_data.items():
