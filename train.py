@@ -26,6 +26,7 @@ from transformers import logging
 logging.set_verbosity_error()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 LOG_DIR = Path("/home/featurize/ai4code")
 
