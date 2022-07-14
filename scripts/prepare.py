@@ -150,7 +150,6 @@ def main(
         orders_dict[item.id] = item.cell_order.split(" ")
 
     tokenizer = AutoTokenizer.from_pretrained(pretrained_tokenizer, do_lower_case=True, use_fast=True)
-    tokenizer.add_special_tokens({ "additional_special_tokens": [ "[unused1]" ] })
 
     with multiprocessing.Pool(processes=8) as pool:
         results = list(

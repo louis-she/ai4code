@@ -12,6 +12,7 @@ _runs
 tune.sh
 tune.py
 test.py
+test.sh
 *.pth
 Untitled-*.py
 *.pkl
