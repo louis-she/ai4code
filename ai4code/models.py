@@ -167,3 +167,27 @@ class LongFormer(nn.Module):
         x = x[:, 0]
         x = self.classifier(x)
         return x
+
+
+class PairwiseModel(nn.Module):
+
+    def __init__(self, pretrained_path):
+        super().__init__()
+        self.pretrained_path = pretrained_path
+        try:
+            self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False)
+        except TypeError:
+            self.backbone = AutoModel.from_pretrained(pretrained_path)
+        self.config = self.backbone.config
+        self.classifier = nn.Sequential(
+            nn.Linear(in_features=768, out_features=self.config.hidden_size),
+            nn.GELU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(in_features=self.config.hidden_size, out_features=1),
+        )
+
+    def forward(self, x, mask):
+        output = self.backbone(x, mask)
+        all_seq_features = output[0]  # (bs, seq_len, dim)
+        last_seq_feature = all_seq_features[:, 0] # (bs, dim)
+        return self.classifier(last_seq_feature)

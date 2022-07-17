@@ -27,6 +27,8 @@ from ai4code.utils import SerializableDict
 import ignite.distributed as idist
 from torch.optim.swa_utils import AveragedModel
 from transformers import logging
+from ignite.metrics import Precision, Recall, Accuracy
+
 
 logging.set_verbosity_error()
 
@@ -57,21 +59,11 @@ def main(
     num_workers: int = 2,
     train_folds: Tuple[str] = ("1",),
     val_folds: Tuple[int] = (0,),
-    evaluate_every: int = 1e4,
-    with_scheduler: bool = False,
-    with_lstm: bool = False,
-    split_len: int = 8,
+    evaluate_every: int = 30000,
     accumulation_steps: int = 1,
-    pair_lm: bool = True,
-    with_swa: bool = False,
-    # dataset temp
-    anchor_size: int = 64,
     max_len: int = 256,
     train_num_samples: int = None,
     val_num_samples: int = None,
-    dropout: float = 0.2,
-    distil_context: str = None,
-    adversarial: Tuple[str, int, int] = None,  # type, start iteration, stride iteration
     do_evaluation: bool = False,
 ):
     rank = idist.get_local_rank()
@@ -120,15 +112,12 @@ def main(
 
     current_train_fold_idx = 0
 
-    def create_dataset(data, only_task_data=False):
-        return datasets.MixedDatasetWithSplits(
+    def create_dataset(data, val=False):
+        return datasets.PairwiseDataset(
             data,
             special_tokens=special_tokens,
-            anchor_size=anchor_size,
             max_len=max_len,
-            split_len=split_len,
-            distil_context=distil_context,
-            only_task_data=only_task_data,
+            val=val
         )
 
     def get_next_loader():
@@ -150,20 +139,11 @@ def main(
         )
 
     val_loader = idist.auto_dataloader(
-        create_dataset(val_data, only_task_data=True),
+        create_dataset(val_data, val=True),
         num_workers=num_workers,
         batch_size=batch_size,
     )
-
-    model = models.MultiHeadModel(
-        pretrained_path,
-        with_lm=pair_lm,
-        with_lstm=with_lstm,
-        dropout=dropout,
-    )
-
-    if with_swa:
-        swa_model = AveragedModel(model).to(device)
+    model = models.PairwiseModel(pretrained_path)
 
     if load_model:
         state = torch.load(load_model, map_location="cpu")
@@ -192,162 +172,50 @@ def main(
     optimizer = idist.auto_optim(optimizer)
 
     scaler = torch.cuda.amp.GradScaler()
-
-    if adversarial:
-        adversarial_klass, adversarial_start, adversarial_stride = adversarial
-        adversarial_obj = getattr(ai4code.adversarial, adversarial_klass.upper())(
-            model, optimizer, scaler
-        )
-
-    rank_criterion = torch.nn.L1Loss().to(device)
     cls_criterion = torch.nn.BCEWithLogitsLoss().to(device)
-
-    def forward_train_loss(
-        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
-    ):
-        real_bs = input_ids.shape[0]
-        # input_ids, mask, lm_input_ids, lm_mask: bs x 256
-        input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
-        mask = torch.cat([mask, lm_mask], dim=0)
-
-        with torch.cuda.amp.autocast(enabled=True):
-            in_split, rank, lm_logits = model(
-                input_ids, mask
-            )
-
-            in_split = in_split[:real_bs]
-            rank = rank[:real_bs]
-            lm_logits = lm_logits[real_bs:]
-
-            split_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
-
-            valid_ranks = targets[:, 0] == 1
-            if valid_ranks.sum().item() == 0:
-                # 没有 valid 不能设置 rank_loss 为 0，否则 ddp 训练会报 grad 为空的错误
-                rank_loss = rank_criterion(rank[0:1].squeeze(1), targets[0:1, 1]) * 1e-7
-            else:
-                rank_loss = rank_criterion(
-                    rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
-                )
-
-            lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_targets)
-            loss = split_loss + rank_loss + lm_loss
-
-        return loss, split_loss, rank_loss, lm_loss
 
     def train(engine, batch):
         model.train()
-        input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets = [
-            item.to(device) for item in batch[:6]
-        ]
-
-        loss, split_loss, rank_loss, lm_loss = forward_train_loss(
-            input_ids, mask, lm_input_ids, lm_mask, targets, lm_targets
-        )
+        input_ids, mask, targets = [item.to(device) for item in batch]
+        with torch.cuda.amp.autocast(enabled=True):
+            preds = model(input_ids, mask)
+            loss = cls_criterion(preds, targets)
         scaler.scale(loss).backward()
-
-        if (
-            adversarial
-            and engine.state.iteration > adversarial_start
-            and engine.state.iteration % adversarial_stride == 0
-        ):
-            adversarial_obj.save()
-            adversarial_obj.attack()
-            loss, split_loss, rank_loss, lm_loss = forward_train_loss(
-                input_ids,
-                mask,
-                lm_input_ids,
-                lm_mask,
-                targets,
-                lm_targets,
-            )
-            optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            adversarial_obj.restore()
 
         if engine.state.iteration % accumulation_steps == 0:
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
 
-        if with_swa:
-            swa_model.update_parameters(model)
-
-        return (
-            loss.detach().item(),
-            split_loss.detach().item(),
-            rank_loss.detach().item(),
-            lm_loss.detach().item(),
-        )
+        return loss
 
     @torch.no_grad()
     def rank_eval(engine, batch):
-        eval_model = model if not with_swa else swa_model
-        eval_model.eval()
+        model.eval()
         input_ids, mask, targets = [
-            item.to(device) for item in batch[:3]
+            item.to(device) for item in batch
         ]
-        sample_ids, cell_keys, split_ids, rank_offsets = batch[3:]
-
-        in_split, rank = eval_model(
-            input_ids, mask, lm=False
-        )
-        cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
-        valid_ranks = targets[:, 0] == 1
-        rank_loss = rank_criterion(
-            rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
-        )
-        loss = cls_loss + rank_loss
-
-        return loss, in_split, rank, sample_ids, cell_keys, split_ids, rank_offsets
+        preds = model(input_ids, mask)
+        return preds > 0.5, targets
 
     trainer = Engine(train)
     evaluator = Engine(rank_eval)
 
-    RunningAverage(output_transform=lambda x: x[0]).attach(trainer, "loss")
-    RunningAverage(output_transform=lambda x: x[1]).attach(trainer, "cls_loss")
-    RunningAverage(output_transform=lambda x: x[2]).attach(trainer, "rank_loss")
-    RunningAverage(output_transform=lambda x: x[3]).attach(trainer, "lm_loss")
-    if rank == 0:
+    metric = Accuracy()
+    metric.attach(evaluator, 'accuracy')
 
+    RunningAverage(output_transform=lambda x: x).attach(trainer, "loss")
+    if rank == 0:
         @trainer.on(Events.ITERATION_COMPLETED(every=50))
         def _print_progress(engine):
             print(
-                "({}/{}@{}) loss: {:10.4f}\tcls_loss: {:10.4f}\trank_loss: {:10.4f}\tlm_loss: {:10.4f}\t".format(
+                "({}/{}@{}) loss: {:10.4f}".format(
                     engine.state.iteration % engine.state.epoch_length,
                     engine.state.epoch_length,
                     engine.state.epoch,
                     engine.state.metrics["loss"],
-                    engine.state.metrics["cls_loss"],
-                    engine.state.metrics["rank_loss"],
-                    engine.state.metrics["lm_loss"],
                 )
             )
-
-    metric = metrics.KendallTauWithSplits(val_data, split_len)
-    metric.attach(evaluator, "kendall_tau")
-
-    # scheduler
-    if with_scheduler:
-        scheduler = torch.optim.lr_scheduler.CyclicLR(
-            optimizer,
-            max_lr=lr,
-            base_lr=lr * 0.03,
-            step_size_up=2e3,
-            step_size_down=2e4,
-            cycle_momentum=False,
-        )
-        @trainer.on(Events.ITERATION_COMPLETED)
-        def step_scheduler(engine):
-            try:
-                scheduler.step()
-            except ValueError:
-                pass
-
-        @trainer.on(Events.ITERATION_COMPLETED(every=50))
-        def step_scheduler(engine):
-            if rank == 0 and wandb:
-                wandb.log({"lr": scheduler.get_lr()[0]}, step=trainer.state.iteration)
 
     # checkpoint
     objects_to_checkpoint = {
@@ -356,17 +224,13 @@ def main(
         "optimizer": optimizer,
         "scaler": scaler,
         "params": params,
-        "metric": metric
     }
-
-    if with_scheduler:
-        objects_to_checkpoint["lr_scheduler"] = scheduler
 
     checkpoint = Checkpoint(
         to_save=objects_to_checkpoint,
         save_handler=DiskSaver(code_dir, require_empty=False),
         n_saved=3,
-        score_name="kendall_tau",
+        score_name="accuracy",
         global_step_transform=lambda *_: trainer.state.iteration,
     )
     if rank == 0 and not testing and saving_checkpoint:
@@ -407,7 +271,7 @@ def main(
             trainer,
             event_name=Events.ITERATION_COMPLETED,
             tag="training",
-            output_transform=lambda loss: {"loss": loss[0], "cls_loss": loss[1], "rank_loss": loss[2], "lm_loss": loss[3]}
+            output_transform=lambda loss: {"loss": loss[0]}
         )
 
         wandb.attach_output_handler(
@@ -418,17 +282,17 @@ def main(
             global_step_transform=lambda *_: trainer.state.iteration,
         )
 
+    @evaluator.on(Events.EPOCH_COMPLETED)
+    def _print_result(engine):
+        print(engine.state.metrics["accuracy"])
+
     if not do_evaluation:
         trainer.run(get_next_loader(), max_epochs=max_epochs)
     else:
         evaluator.run(val_loader)
 
-    @evaluator.on(Events.COMPLETED)
-    def _free_mem(engine):
-        metric.reset()
-
     idist.finalize()
-    if rank == 0:
+    if rank == 0 and wandb:
         wandb.close()
 
 

@@ -5,42 +5,45 @@ import torch
 from transformers import AutoTokenizer
 
 from ai4code.datasets import Sample
+from ai4code.datasets.types import SpecialTokenID
+from ai4code.utils import adjust_sequences
 
 
 class PairwiseDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         data: Dict[str, Sample],
-        tokenizer: AutoTokenizer,
-        max_len: int,
-        negative_ratio: float,
-        code_span: int = 1
+        special_tokens: SpecialTokenID,
+        val: bool = False,
+        max_len: int = 256,
+        negative_ratio: float = 0.5,
+        code_span: int = 1,
     ):
+        self.val = val
         self.data = data
-        self.tokenizer = tokenizer
+        self.special_tokens = special_tokens
         self.max_len = max_len
         self.all_cell_keys = []
         self.negative_ratio = negative_ratio
         self.code_span = code_span
+        self.sample_ids = []
 
         # 获得 cluster 的 markdown
-        self.markdown_segments : List[List[str]] = defaultdict(list)
+        self.markdown_segments = {}
         for sample in list(self.data.values()):
-            self.sample_ids.append(sample.id)
             processed_list = []
             tmp_code_list = []
             for cell_key in sample.orders:
                 # 第一次遍历，去掉连续小于 code_span 中的所有 code
                 cell_type = sample.cell_types[cell_key]
-                if cell_key == "code":
+                if cell_type == "code":
                     tmp_code_list.append(cell_key)
-                if cell_key == "markdown":
+                if cell_type == "markdown":
                     if len(tmp_code_list) > self.code_span:
                         # 跨度足够大的 code 段，加到处理后的数组中
                         processed_list += tmp_code_list
-                    else:
-                        tmp_code_list = []
-                        # 连续的 code cell 不足，放弃掉这个段
+                    tmp_code_list = []
+                    processed_list.append(cell_key)
 
             # processed_list 是符合条件的 code 以及 markdown
             # 直接将 markdown 的段取出来
@@ -52,92 +55,58 @@ class PairwiseDataset(torch.utils.data.Dataset):
                     markdown_seg.append(cell_key)
                 if cell_type == "code":
                     if len(markdown_seg) > 1:
+                        if sample.id not in self.markdown_segments:
+                            self.markdown_segments[sample.id] = []
                         self.markdown_segments[sample.id].append(markdown_seg)
                         has_valid_seg = True
                     markdown_seg = []
+            if len(markdown_seg) != 0:
+                if sample.id not in self.markdown_segments:
+                    self.markdown_segments[sample.id] = []
+                self.markdown_segments[sample.id].append(markdown_seg)
+                has_valid_seg = True
             if has_valid_seg:
                 self.sample_ids.append(sample.id)
 
     def __len__(self):
-        return len(self.sample_ids)
+        if self.val:
+            return len(self.sample_ids) * 5
+        else:
+            return len(self.sample_ids)
 
     def __getitem__(self, index):
         sample = self.data[self.sample_ids[index]]
-        markdown_segments = self.markdown_segments[index]
+        markdown_segments = self.markdown_segments[sample.id]
 
-    #     cell_key, sample_id = self.all_cell_keys[index]
-    #     sample = self.data[sample_id]
-    #     n_sample_cells = sample.markdown_cell_count + sample.code_cell_count
-    #     cell_order_index = sample.orders.index(cell_key)
+        if random.random() < self.negative_ratio and len(markdown_segments) > 1:
+            # negative sample
+            label = False
+            mdsegs = random.sample(markdown_segments, k=2)
+            keys_seqs = [random.sample(mdseg, k=1)[0] for mdseg in mdsegs]
+        else:
+            label = True
+            mdseg = random.sample(markdown_segments, k=1)[0]
+            anchor_index = random.sample(range(len(mdseg)), k=1)[0]
+            if anchor_index == len(mdseg) - 1:
+                pair_index = anchor_index - 1
+            else:
+                pair_index = anchor_index + 1
+            keys_seqs = [mdseg[anchor_index], mdseg[pair_index]]
 
-    #     positive = random.random() > self.negative_ratio
-    #     try:
-    #         next_cell_key = sample.orders[cell_order_index + 1]
-    #     except IndexError:
-    #         assert cell_order_index + 1 == n_sample_cells
-    #         next_cell_key = None
+        seqs = [sample.cell_encodes[key] for key in keys_seqs]
+        # cls + anchor + pad + pair + pad
+        seqs, _ = adjust_sequences(seqs, self.max_len - 3)
+        input_ids = (
+            [self.special_tokens.cls_token_id]
+            + seqs[0]
+            + [self.special_tokens.sep_token_id]
+            + seqs[1]
+            + [self.special_tokens.sep_token_id]
+        )
 
-    #     if positive:
-    #         pair_source = "" if next_cell_key is None else sample.sources[next_cell_key]
-    #     else:
-    #         # random pick a source(not self and self + 1) as negative source
-    #         # TODO: try to pick hard neg sample
-    #         candinates = [
-    #             o for o in sample.orders if o not in (next_cell_key, cell_key)
-    #         ]
-    #         if len(candinates) < 1:
-    #             # TODO:
-    #             # 这些样本应该直接 drop 掉
-    #             pair_source_key = cell_key
-    #         else:
-    #             pair_source_key = random.sample(candinates, k=1)[0]
-    #         pair_source = sample.sources[pair_source_key]
+        input_ids = input_ids[: self.max_len]
+        pad_len = self.max_len - len(input_ids)
+        input_ids += [self.special_tokens.pad_token_id] * pad_len
+        attention_mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
-    #     # concatenate the source and pair source
-    #     source = sample.sources[cell_key]
-    #     ori_ids, pair_ids = self.tokenizer.batch_encode_plus(
-    #         [source, pair_source],
-    #         add_special_tokens=False,
-    #     )["input_ids"]
-
-    #     input_ids, attention_masks = self.ensemble(
-    #         ori_ids,
-    #         pair_ids,
-    #         self.max_len,
-    #         self.tokenizer.cls_token_id,
-    #         self.tokenizer.sep_token_id,
-    #         self.tokenizer.pad_token_id,
-    #     )
-
-    #     return (
-    #         torch.tensor(input_ids).long(),
-    #         torch.tensor(attention_masks).long(),
-    #         torch.tensor([positive]).float(),
-    #         torch.tensor([sample.code_cell_count, sample.markdown_cell_count]),
-    #         cell_key,
-    #         sample.id,
-    #     )
-
-    # @staticmethod
-    # def ensemble(ori_ids, pair_ids, max_len, cls_token_id, sep_token_id, pad_token_id):
-    #     # adjust the length of ori_ids and pair_ids
-    #     # pattern is [cls] + ori_ids + [sep] + pair_ids + [sep]
-    #     ori_len, pair_len = len(ori_ids), len(pair_ids)
-    #     min_len = min([ori_len, pair_len])
-    #     left_space = (max_len - 3) - min_len * 2
-
-    #     min_len = min(min_len, (max_len - 3) // 2)
-    #     if ori_len > pair_len:
-    #         ori_ids = ori_ids[: min_len + max(left_space, 0)]
-    #         pair_ids = pair_ids[:min_len]
-    #     else:
-    #         ori_ids = ori_ids[:min_len]
-    #         pair_ids = pair_ids[: min_len + max(left_space, 0)]
-    #     input_ids = (
-    #         [cls_token_id] + ori_ids + [sep_token_id] + pair_ids + [sep_token_id]
-    #     )
-    #     input_ids_len = len(input_ids)
-    #     assert input_ids_len <= max_len
-    #     input_ids += [pad_token_id] * (max_len - input_ids_len)
-    #     attention_masks = [1] * input_ids_len + [0] * (max_len - input_ids_len)
-    #     return input_ids, attention_masks
+        return torch.tensor(input_ids).long(), torch.tensor(attention_mask).long(), torch.tensor([label]).float()

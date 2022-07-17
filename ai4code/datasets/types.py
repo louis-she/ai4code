@@ -28,6 +28,10 @@ class Sample:
     # data split
     fold: Optional[int] = None
 
+    @property
+    def cell_type_order(self):
+        return [self.cell_types[key] for key in self.orders]
+
 
 @dataclass
 class SpecialTokenID:
