@@ -92,7 +92,11 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         sample_id, cell_key, split_id, rank_offset = self.all_cells[index]
         sample = self.data[sample_id]
 
-        anchor_encode = self.get_encode(sample, cell_key)[: self.anchor_size]
+        if isinstance(self.anchor_size, tuple):
+            anchor_size = random.sample(range(*self.anchor_size), k=1)[0]
+        else:
+            anchor_size = self.anchor_size
+        anchor_encode = self.get_encode(sample, cell_key)[: anchor_size]
 
         input_ids = (
             [self.special_tokens.cls_token_id]
