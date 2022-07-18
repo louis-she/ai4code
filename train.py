@@ -61,6 +61,7 @@ def main(
     with_swa: bool = False,
     # dataset temp
     anchor_size: int = 64,
+    val_anchor_size: int = None,
     max_len: int = 256,
     train_num_samples: int = None,
     val_num_samples: int = None,
@@ -70,6 +71,8 @@ def main(
     do_evaluation: bool = False,
 ):
     rank = idist.get_local_rank()
+    if val_anchor_size is None:
+        val_anchor_size = anchor_size
     params = SerializableDict(locals())
     if rank == 0:
         utils.print_params(params.state_dict())
@@ -115,7 +118,7 @@ def main(
 
     current_train_fold_idx = 0
 
-    def create_dataset(data, only_task_data=False):
+    def create_dataset(data, anchor_size, only_task_data=False):
         return datasets.MixedDatasetWithSplits(
             data,
             special_tokens=special_tokens,
@@ -139,13 +142,13 @@ def main(
         current_train_fold_idx += 1
 
         return idist.auto_dataloader(
-            create_dataset(train_data),
+            create_dataset(train_data, anchor_size=anchor_size),
             batch_size=batch_size,
             shuffle=True,
         )
 
     val_loader = idist.auto_dataloader(
-        create_dataset(val_data, only_task_data=True),
+        create_dataset(val_data, anchor_size=val_anchor_size, only_task_data=True),
         num_workers=num_workers,
         batch_size=batch_size,
     )
