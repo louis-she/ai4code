@@ -33,6 +33,7 @@ def main(
     pretrained_path: str,
     anchor_size: int = 64,
     max_len: int = 256,
+    batch_size: int = 32,
     split_len: int = 10,
 ):
     data = pickle.load(open("/home/featurize/work/ai4code/data/v8/mini.v8.pkl", "rb"))
@@ -57,7 +58,7 @@ def main(
         distil_context=None,
         only_task_data=True,
     )
-    loader = DataLoader(dataset, num_workers=2, batch_size=32, shuffle=False)
+    loader = DataLoader(dataset, num_workers=2, batch_size=batch_size, shuffle=False)
     model = AutoModel.from_pretrained(pretrained_path)
     model = models.MultiHeadModel(pretrained_path)
     model.cuda()
