@@ -96,7 +96,7 @@ class MultiHeadModel(nn.Module):
         if lm and self.with_lm:
             return self.classifier(last_seq_context_feature), self.ranker(last_seq_context_feature), self.lm(last_seq_feature)
         else:
-            return self.classifier(last_seq_context_feature), self.ranker(last_seq_context_feature)
+            return self.classifier(last_seq_context_feature), self.ranker(last_seq_context_feature), None
 
 
 class CodebertModel(nn.Module):

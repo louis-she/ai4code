@@ -57,7 +57,7 @@ def main(
     with_lstm: bool = False,
     split_len: int = 8,
     accumulation_steps: int = 1,
-    pair_lm: bool = True,
+    pair_lm: bool = False,
     with_swa: bool = False,
     # dataset temp
     anchor_size: int = 64,
@@ -205,20 +205,21 @@ def main(
     ):
         real_bs = input_ids.shape[0]
         # input_ids, mask, lm_input_ids, lm_mask: bs x 256
-        input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
-        mask = torch.cat([mask, lm_mask], dim=0)
+        if pair_lm:
+            input_ids = torch.cat([input_ids, lm_input_ids], dim=0)
+            mask = torch.cat([mask, lm_mask], dim=0)
 
         with torch.cuda.amp.autocast(enabled=True):
             in_split, rank, lm_logits = model(
                 input_ids, mask
             )
 
-            in_split = in_split[:real_bs]
-            rank = rank[:real_bs]
-            lm_logits = lm_logits[real_bs:]
+            if pair_lm:
+                in_split = in_split[:real_bs]
+                rank = rank[:real_bs]
+                lm_logits = lm_logits[real_bs:]
 
             split_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
-
             valid_ranks = targets[:, 0] == 1
             if valid_ranks.sum().item() == 0:
                 # 没有 valid 不能设置 rank_loss 为 0，否则 ddp 训练会报 grad 为空的错误
@@ -228,7 +229,10 @@ def main(
                     rank[valid_ranks].squeeze(1), targets[valid_ranks, 1]
                 )
 
-            lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_targets)
+            if pair_lm:
+                lm_loss = F.binary_cross_entropy_with_logits(lm_logits, lm_targets)
+            else:
+                lm_loss = torch.tensor(0)
             loss = split_loss + rank_loss + lm_loss
 
         return loss, split_loss, rank_loss, lm_loss
@@ -287,7 +291,7 @@ def main(
         ]
         sample_ids, cell_keys, split_ids, rank_offsets = batch[3:]
 
-        in_split, rank = eval_model(
+        in_split, rank, _ = eval_model(
             input_ids, mask, lm=False
         )
         cls_loss = cls_criterion(in_split.squeeze(1), targets[:, 0])
