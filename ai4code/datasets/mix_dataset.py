@@ -22,6 +22,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         shuffle_markdowns=True,
         only_task_data=False,
         encode_key=None,
+        reverse=False,
     ):
         self.read_count = 0
         self.only_task_data = only_task_data
@@ -33,6 +34,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         self.all_cells = []
         self.feature_scaler = StandardScaler()
         self.encode_key = encode_key
+        self.reverse = reverse
 
         self.distil_context = distil_context
 
@@ -84,9 +86,12 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
 
     def get_encode(self, sample, cell_key):
         if self.encode_key:
-            return sample.cell_encodes[self.encode_key][cell_key]
+            encode = sample.cell_encodes[self.encode_key][cell_key]
         else:
-            return sample.cell_encodes[cell_key]
+            encode = sample.cell_encodes[cell_key]
+        if self.reverse:
+            encode = encode[::-1]
+        return encode
 
     def get_task_data(self, index):
         sample_id, cell_key, split_id, rank_offset = self.all_cells[index]

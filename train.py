@@ -59,6 +59,7 @@ def main(
     accumulation_steps: int = 1,
     pair_lm: bool = False,
     with_swa: bool = False,
+    reverse: bool = False,
     # dataset temp
     anchor_size: int = 64,
     val_anchor_size: int = None,
@@ -126,6 +127,7 @@ def main(
             max_len=max_len,
             split_len=split_len,
             distil_context=distil_context,
+            reverse=reverse,
             only_task_data=only_task_data,
         )
 
