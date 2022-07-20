@@ -102,11 +102,12 @@ class KendallTauNaive(Metric):
 
 class KendallTauWithSplits(Serializable, Metric):
 
-    def __init__(self, val_data: Dict[str, Sample], split_len):
+    def __init__(self, val_data: Dict[str, Sample], split_len, mode="max"):
         super().__init__()
         self.val_data = val_data
         self.split_len = split_len
         self.reset()
+        self.mode = mode
 
     def reset(self):
         self._all_predictions = []
@@ -152,13 +153,26 @@ class KendallTauWithSplits(Serializable, Metric):
                     # markdown cell，选出 in_split 得分最高的，取 rank + split_offset
                     item = (cell_key, all_predictions_dict[sample.id][cell_key])
                     split_results = list(all_predictions_dict[sample.id][cell_key].items())
-                    in_split_result = split_results[0][1]
-                    for split_id, result in split_results[1:]:
-                        if result[0] > in_split_result[0]:
-                            in_split_result = result
-
-                    in_split_score, rank_normed, sample_id, split_id, rank_offset = in_split_result
-                    cell_rank = math.e**rank_normed + rank_offset
+                    if self.mode == "max":
+                        in_split_result = split_results[0][1]
+                        for split_id, result in split_results[1:]:
+                            if result[0] > in_split_result[0]:
+                                in_split_result = result
+                        in_split_score, rank_normed, sample_id, split_id, rank_offset = in_split_result
+                        cell_rank = math.e**rank_normed + rank_offset
+                    elif self.mode == "weighted_average":
+                        ranks, in_split_scores = [], []
+                        for split_id, result in split_results:
+                            rank = math.e**result[1] + result[4]
+                            ranks.append(rank)
+                            in_split_scores.append(result[0])
+                        in_split_score = torch.tensor(in_split_scores).max().item()
+                        scores = torch.sigmoid(torch.tensor(in_split_scores))
+                        weights = scores / scores.sum()
+                        cell_rank = (torch.tensor(ranks) * weights).sum().item()
+                        rank_normed = 0
+                    else:
+                        raise RuntimeError(f"Not supported mode {self.mode}")
                     item = (cell_key, cell_rank, in_split_score, rank_normed, sample_id, split_id)
 
                 all_preds.append(item)
