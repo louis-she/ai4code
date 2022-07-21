@@ -125,7 +125,6 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         context_encodes, indices = utils.adjust_sequences(
             context_encodes, self.max_len - len(anchor_encode) - self.split_len - 2
         )
-        context_types = [context_types[i][:k] for i, k in enumerate(indices)]
 
         for i, (
             context_encode,
