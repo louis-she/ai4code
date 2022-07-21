@@ -1,3 +1,4 @@
+from collections import Counter
 import math
 import pickle
 import random
@@ -23,6 +24,8 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         only_task_data=False,
         encode_key=None,
         reverse=False,
+        global_keywords=None,
+        keywords_thres=5,
     ):
         self.read_count = 0
         self.only_task_data = only_task_data
@@ -35,8 +38,13 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         self.feature_scaler = StandardScaler()
         self.encode_key = encode_key
         self.reverse = reverse
-
         self.distil_context = distil_context
+        self.global_keywords = global_keywords
+        self.keywords_thres = keywords_thres
+
+        if self.global_keywords:
+            with open(self.global_keywords, "rb"):
+                self.global_keywords = pickle.load(self.global_keywords)
 
         if self.distil_context:
             self.context_cells_keys = pickle.load(open(self.distil_context, "rb"))
@@ -68,6 +76,27 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
                         self.all_cells.append(
                             (sample.id, cell_key, split_id, rank_offset)
                         )
+
+            sample_keywords = set()
+            if self.global_keywords:
+                keywords_counter = Counter()
+                # 获取 sample keywords encodes
+                markdown_encode_set = set()
+                code_encode_list = []
+                for cell_key in sample.cell_keys:
+                    cell_encode = sample.cell_encodes[cell_key]
+                    cell_type = sample.cell_types[cell_key]
+                    if cell_type == "code":
+                        code_encode_list += cell_encode
+                    elif cell_type == "markdown":
+                        markdown_encode_set.update(cell_encode)
+                for code_encode in code_encode_list:
+                    if code_encode in markdown_encode_set:
+                        keywords_counter[code_encode] += 1
+                for key, apperance in keywords_counter.most_common()[::-1]:
+                    if key in self.global_keywords_encode or apperance > self.keywords_thres:
+                        continue
+                    sample_keywords.add(key)
 
         if not self.only_task_data:
             self.all_cell_pairs = []
@@ -122,10 +151,15 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             context_encodes.append(context_encode)
             context_types.append(cell_type)
 
-        context_encodes, indices = utils.adjust_sequences(
+        _, length_of_seqs = utils.adjust_sequences(
             context_encodes, self.max_len - len(anchor_encode) - self.split_len - 2
         )
-        context_types = [context_types[i][:k] for i, k in enumerate(indices)]
+
+        if self.global_keywords:
+            # 如果 keywords，则需重新抽取 context_encodes
+            pass
+
+        context_types = [context_types[i][:k] for i, k in enumerate(length_of_seqs)]
 
         for i, (
             context_encode,
