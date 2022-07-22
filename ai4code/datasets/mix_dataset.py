@@ -124,6 +124,15 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             encode = encode[::-1]
         return encode
 
+    def subseq_by_anchors(self, encodes, quota, sample_id):
+        anchors = set()
+        values = set()
+        for anchor_index, encode in enumerate(encodes):
+            if encode not in self.global_keywords and encode in self.sample_keywords[sample_id] and encode not in values:
+                anchors.add(anchor_index)
+                values.add(encode)
+        return utils.advanced_subsequence(encodes, anchors, quota)
+
     def get_task_data(self, index):
         sample_id, cell_key, split_id, rank_offset = self.all_cells[index]
         sample = self.data[sample_id]
@@ -132,7 +141,12 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             anchor_size = random.sample(range(*self.anchor_size), k=1)[0]
         else:
             anchor_size = self.anchor_size
-        anchor_encode = self.get_encode(sample, cell_key)[: anchor_size]
+
+        anchor_encode = self.get_encode(sample, cell_key)
+        if self.global_keywords:
+            anchor_encode = self.subseq_by_anchors(anchor_encode, anchor_size, sample_id)
+        else:
+            anchor_encode = anchor_encode[:anchor_size]
 
         input_ids = (
             [self.special_tokens.cls_token_id]
@@ -161,16 +175,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             # 如果 keywords，则需重新抽取 context_encodes
             new_context_encodes = []
             for encodes, quota in zip(context_encodes, length_of_seqs):
-                anchors = set()
-                values = set()
-                for anchor_index, encode in enumerate(encodes):
-                    if encode not in self.global_keywords and encode in self.sample_keywords[sample_id] and encode not in values:
-                        anchors.add(anchor_index)
-                        values.add(encode)
-                # print("anchors: ", anchors, " quota: ", quota, " encodes: ", encodes)
-                new_encodes = utils.advanced_subsequence(encodes, anchors, quota)
-                # print("new_encodes: ", new_encodes)
-                new_context_encodes.append(new_encodes)
+                new_context_encodes.append(self.subseq_by_anchors(encodes, quota, sample_id))
             context_encodes = new_context_encodes
         else:
             context_encodes = _context_encodes
