@@ -60,6 +60,7 @@ def main(
     pair_lm: bool = False,
     with_swa: bool = False,
     reverse: bool = False,
+    global_keywords: str = None,
     # dataset temp
     anchor_size: int = 64,
     val_anchor_size: int = None,
@@ -129,6 +130,7 @@ def main(
             distil_context=distil_context,
             reverse=reverse,
             only_task_data=only_task_data,
+            global_keywords=global_keywords,
         )
 
     def get_next_loader():
