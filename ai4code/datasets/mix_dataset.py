@@ -41,10 +41,11 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         self.distil_context = distil_context
         self.global_keywords = global_keywords
         self.keywords_thres = keywords_thres
+        self.sample_keywords : Dict[str, set] = {}
 
         if self.global_keywords:
-            with open(self.global_keywords, "rb"):
-                self.global_keywords = pickle.load(self.global_keywords)
+            with open(self.global_keywords, "rb") as f:
+                self.global_keywords = pickle.load(f)
 
         if self.distil_context:
             self.context_cells_keys = pickle.load(open(self.distil_context, "rb"))
@@ -94,9 +95,10 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
                     if code_encode in markdown_encode_set:
                         keywords_counter[code_encode] += 1
                 for key, apperance in keywords_counter.most_common()[::-1]:
-                    if key in self.global_keywords_encode or apperance > self.keywords_thres:
+                    if key in self.global_keywords or apperance > self.keywords_thres:
                         continue
                     sample_keywords.add(key)
+            self.sample_keywords[sample.id] = sample_keywords
 
         if not self.only_task_data:
             self.all_cell_pairs = []
@@ -151,13 +153,27 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
             context_encodes.append(context_encode)
             context_types.append(cell_type)
 
-        _, length_of_seqs = utils.adjust_sequences(
+        _context_encodes, length_of_seqs = utils.adjust_sequences(
             context_encodes, self.max_len - len(anchor_encode) - self.split_len - 2
         )
 
         if self.global_keywords:
             # 如果 keywords，则需重新抽取 context_encodes
-            pass
+            new_context_encodes = []
+            for encodes, quota in zip(context_encodes, length_of_seqs):
+                anchors = set()
+                values = set()
+                for anchor_index, encode in enumerate(encodes):
+                    if encode not in self.global_keywords and encode in self.sample_keywords[sample_id] and encode not in values:
+                        anchors.add(anchor_index)
+                        values.add(encode)
+                # print("anchors: ", anchors, " quota: ", quota, " encodes: ", encodes)
+                new_encodes = utils.advanced_subsequence(encodes, anchors, quota)
+                # print("new_encodes: ", new_encodes)
+                new_context_encodes.append(new_encodes)
+            context_encodes = new_context_encodes
+        else:
+            context_encodes = _context_encodes
 
         for i, (
             context_encode,

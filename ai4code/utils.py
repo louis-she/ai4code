@@ -1,3 +1,4 @@
+from copy import copy
 from dataclasses import dataclass
 from functools import reduce
 import hashlib
@@ -10,7 +11,7 @@ from termcolor import colored
 import os
 import random
 from collections import OrderedDict
-from typing import Dict, List
+from typing import Any, Dict, List, Set
 from ignite.base.mixins import Serializable
 from ai4code import datasets
 import ai4code
@@ -31,6 +32,37 @@ class SerializableDict(Serializable):
 
     def __getitem__(self, key):
         return self._state[key]
+
+
+def advanced_subsequence(sequence: List[Any], anchor_indices: Set[int], quota:  int):
+    anchor_indices.add(0)
+    anchor_indices.add(len(sequence) - 1)
+    results_indices = copy(anchor_indices)
+    pointors = []
+
+    for anchor_index in anchor_indices:
+        pointors.append([anchor_index, 0])
+        pointors.append([anchor_index, 1])
+
+    i = -1
+    while True:
+        i += 1
+        k = i % len(pointors)
+        pointor = pointors[k]
+        if pointor is None:
+            continue
+        if pointor[1] == 0:
+            pointor[0] -= 1
+        else:
+            pointor[0] += 1
+        if pointor[0] < 0 or pointor[0] >= len(sequence) or pointor[0] in results_indices:
+            pointors[k] = None
+        else:
+            results_indices.add(pointor[0])
+        if len(results_indices) >= quota or all([p is None for p in pointors]):
+            break
+
+    return [sequence[i] for i in sorted(results_indices)]
 
 
 def adjust_sequences(sequences, max_len):
