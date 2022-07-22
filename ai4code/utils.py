@@ -35,6 +35,8 @@ class SerializableDict(Serializable):
 
 
 def advanced_subsequence(sequence: List[Any], anchor_indices: Set[int], quota:  int):
+    if len(sequence) == 0:
+        return sequence
     anchor_indices.add(0)
     anchor_indices.add(len(sequence) - 1)
     results_indices = copy(anchor_indices)

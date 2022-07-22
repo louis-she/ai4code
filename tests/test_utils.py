@@ -58,4 +58,8 @@ def test_advanced_subsequence():
     quota = 13
     anchors = {8, 10}
     new_sequence = utils.advanced_subsequence(sequence, anchors, quota)
-    print(new_sequence)
+
+    sequence = []
+    quota = 13
+    anchors = set()
+    new_sequence = utils.advanced_subsequence(sequence, anchors, quota)
