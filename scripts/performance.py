@@ -30,9 +30,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "True"
 
 
 def main(
-    pretrained_path: str,
+    pretrained_path: str = "/home/featurize/deberta-v3-small",
     anchor_size: int = 64,
-    max_len: int = 256,
+    max_len: int = 768,
     batch_size: int = 32,
     split_len: int = 10,
 ):
@@ -58,9 +58,8 @@ def main(
         distil_context=None,
         only_task_data=True,
     )
-    loader = DataLoader(dataset, num_workers=2, batch_size=batch_size, shuffle=False)
-    model = AutoModel.from_pretrained(pretrained_path)
-    model = models.MultiHeadModel(pretrained_path)
+    loader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=False)
+    model = models.MultiHeadModel(pretrained_path, max_len=max_len)
     model.cuda()
 
     now = time.time()

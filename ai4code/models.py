@@ -40,12 +40,14 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, with_lm=False, dropout=0.2, with_lstm=False):
+    def __init__(self, pretrained_path, max_len, with_lm=False, dropout=0.2, with_lstm=False):
         super().__init__()
+        self.max_len = max_len
         self.pretrained_path = pretrained_path
         try:
             self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False, position_biased_input=True)
-        except TypeError:
+        except TypeError as e:
+            print(f"create backbone failed with {e}")
             self.backbone = AutoModel.from_pretrained(pretrained_path, position_biased_input=True)
         self.config = self.backbone.config
         self.with_lm = with_lm

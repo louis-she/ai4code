@@ -159,6 +159,7 @@ def main(
 
     model = models.MultiHeadModel(
         pretrained_path,
+        max_len=max_len,
         with_lm=pair_lm,
         with_lstm=with_lstm,
         dropout=dropout,
