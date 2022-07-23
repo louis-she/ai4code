@@ -44,9 +44,9 @@ class MultiHeadModel(nn.Module):
         super().__init__()
         self.pretrained_path = pretrained_path
         try:
-            self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False)
+            self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False, position_biased_input=True)
         except TypeError:
-            self.backbone = AutoModel.from_pretrained(pretrained_path)
+            self.backbone = AutoModel.from_pretrained(pretrained_path, position_biased_input=True)
         self.config = self.backbone.config
         self.with_lm = with_lm
         self.with_lstm = with_lstm
