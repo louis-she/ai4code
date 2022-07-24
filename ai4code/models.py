@@ -52,6 +52,7 @@ class MultiHeadModel(nn.Module):
         if max_len > 512:
             # 手动修改 position embedding 层
             self.backbone.embeddings.position_embeddings = nn.Embedding(self.max_len, self.backbone.embeddings.embedding_size)
+            self.backbone.embeddings.position_embeddings.weight.data.normal_(mean=0.0, std=self.backbone.config.initializer_range)
             self.backbone.embeddings.register_buffer("position_ids", torch.arange(self.max_len).expand((1, -1)))
         self.config = self.backbone.config
         self.with_lm = with_lm
