@@ -49,6 +49,10 @@ class MultiHeadModel(nn.Module):
         except TypeError as e:
             print(f"create backbone failed with {e}")
             self.backbone = AutoModel.from_pretrained(pretrained_path, position_biased_input=True)
+        if max_len > 512:
+            # 手动修改 position embedding 层
+            self.backbone.embeddings.position_embeddings = nn.Embedding(self.max_len, self.backbone.embeddings.embedding_size)
+            self.backbone.embeddings.register_buffer("position_ids", torch.arange(self.max_len).expand((1, -1)))
         self.config = self.backbone.config
         self.with_lm = with_lm
         self.with_lstm = with_lstm
