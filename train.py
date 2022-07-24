@@ -171,6 +171,9 @@ def main(
     if load_model:
         state = torch.load(load_model, map_location="cpu")
         weights = state["model"] if "model" in state else state
+        if "backbone.embeddings.position_ids" in weights and model.max_len != weights["backbone.embeddings.position_ids"].shape[1]:
+            print(colored("position length has changed, remove the position weights", "yellow"))
+            del weights["backbone.embeddings.position_ids"]
         try:
             model.load_state_dict(weights)
         except Exception as e:
