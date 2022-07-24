@@ -173,8 +173,8 @@ def main(
         weights = state["model"] if "model" in state else state
         if "backbone.embeddings.position_ids" in weights and model.max_len != weights["backbone.embeddings.position_ids"].shape[1]:
             print(colored("position length has changed, remove the position weights", "yellow"))
-            del weights["backbone.embeddings.position_ids"]
-            del weights["backbone.embeddings.word_embeddings.weight"]
+            weights.pop("backbone.embeddings.position_ids")
+            weights.pop("backbone.embeddings.word_embeddings.weight")
         try:
             model.load_state_dict(weights)
         except Exception as e:
