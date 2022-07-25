@@ -221,7 +221,7 @@ def process(file):
 
     sample = datasets.Sample(
         id=id,
-        sources=body['source'],
+        sources=None,
         ancestor=ancestor,
         parent=parent,
         orders=cell_orders,

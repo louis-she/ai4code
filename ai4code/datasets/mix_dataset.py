@@ -85,7 +85,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
                 markdown_encode_set = set()
                 code_encode_list = []
                 for cell_key in sample.cell_keys:
-                    cell_encode = sample.cell_encodes[cell_key]
+                    cell_encode = self.get_encode(sample, cell_key)
                     cell_type = sample.cell_types[cell_key]
                     if cell_type == "code":
                         code_encode_list += cell_encode
