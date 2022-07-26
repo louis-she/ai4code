@@ -48,7 +48,11 @@ class MultiHeadModel(nn.Module):
             self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False, position_biased_input=True)
         except TypeError as e:
             print(f"create backbone failed with {e}")
-            self.backbone = AutoModel.from_pretrained(pretrained_path, position_biased_input=True)
+            try:
+                self.backbone = AutoModel.from_pretrained(pretrained_path, position_biased_input=True)
+            except TypeError as e:
+                print(f"create backbone failed with {e}")
+                self.backbone = AutoModel.from_pretrained(pretrained_path, add_pooling_layer=False)
         if max_len > 512:
             # 手动修改 position embedding 层
             self.backbone.embeddings.position_embeddings = nn.Embedding(self.max_len, self.backbone.embeddings.embedding_size)

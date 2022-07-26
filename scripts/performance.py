@@ -68,7 +68,7 @@ def main(
             input_ids, mask, _, _, _, _, _ = batch
             _ = model(input_ids.cuda(), mask.cuda(), lm=False)
     spent = time.time() - now
-    print(spent / 10.64, "小时")
+    print(spent / 7.11, "小时")
 
 
 fire.Fire(main)
