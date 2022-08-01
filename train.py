@@ -71,6 +71,7 @@ def main(
     distil_context: str = None,
     adversarial: Tuple[str, int, int] = None,  # type, start iteration, stride iteration
     do_evaluation: bool = False,
+    freeze_layers: int = None,
 ):
     rank = idist.get_local_rank()
     if val_anchor_size is None:
@@ -163,6 +164,7 @@ def main(
         with_lm=pair_lm,
         with_lstm=with_lstm,
         dropout=dropout,
+        freeze_layers=freeze_layers
     )
 
     if with_swa:

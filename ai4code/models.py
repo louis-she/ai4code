@@ -3,6 +3,8 @@ from transformers import AlbertForSequenceClassification, AutoModel, BertForSequ
 import torch.nn as nn
 import transformers
 
+from ai4code import utils
+
 
 class Model(nn.Module):
 
@@ -40,7 +42,7 @@ class Model(nn.Module):
 
 class MultiHeadModel(nn.Module):
 
-    def __init__(self, pretrained_path, max_len, with_lm=False, dropout=0.2, with_lstm=False):
+    def __init__(self, pretrained_path, max_len, with_lm=False, dropout=0.2, with_lstm=False, freeze_layers=None):
         super().__init__()
         self.max_len = max_len
         self.pretrained_path = pretrained_path
@@ -61,6 +63,9 @@ class MultiHeadModel(nn.Module):
         self.config = self.backbone.config
         self.with_lm = with_lm
         self.with_lstm = with_lstm
+        if freeze_layers:
+            utils.freeze(self.backbone.embeddings)
+            utils.freeze(self.backbone.encoder.layer[:self.freeze_layers])
 
         try:
             out_features_num = self.backbone.encoder.layer[-1].output.dense.out_features

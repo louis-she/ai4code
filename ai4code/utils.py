@@ -270,3 +270,8 @@ def dump_cfg(cfg: Config):
 def load_cfg() -> Config:
     with open("/tmp/cfg.pkl", "rb") as f:
         return pickle.load(f)
+
+
+def freeze(module):
+    for parameter in module.parameters():
+        parameter.requires_grad = False
