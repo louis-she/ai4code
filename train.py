@@ -393,7 +393,6 @@ def main(
 
     @trainer.on(Events.COMPLETED)
     def _evaluate_loss(engine: Engine):
-        logging.info("training ended, now run one last evaluation")
         evaluator.run(val_loader)
 
     @trainer.on(Events.EPOCH_COMPLETED)
