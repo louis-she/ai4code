@@ -6,12 +6,22 @@ from typing import Dict
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import torch
+from tqdm import tqdm
+from pathlib import Path
 from ai4code import utils
 
 from ai4code.datasets.types import Sample, SpecialTokenID
 
 
 class MixedDatasetWithSplits(torch.utils.data.Dataset):
+
+    def presist_samples(self, parent_dir: Path):
+        for sample_id, sample in tqdm(self.data.items()):
+            file = parent_dir / sample_id
+            file.write_bytes(pickle.dumps(sample))
+        self.data = None
+        self.disk_sample_dir = parent_dir
+
     def __init__(
         self,
         data: Dict[str, Sample],
@@ -27,6 +37,7 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
         global_keywords=None,
         keywords_thres=5,
     ):
+        self.use_disk = False
         self.read_count = 0
         self.only_task_data = only_task_data
         self.data = data
@@ -135,7 +146,11 @@ class MixedDatasetWithSplits(torch.utils.data.Dataset):
 
     def get_task_data(self, index):
         sample_id, cell_key, split_id, rank_offset = self.all_cells[index]
-        sample = self.data[sample_id]
+        if self.data is None:
+            with open(self.disk_sample_dir / sample_id, "rb") as f:
+                sample = pickle.load(f)
+        else:
+            sample = self.data[sample_id]
 
         if isinstance(self.anchor_size, tuple):
             anchor_size = random.sample(range(*self.anchor_size), k=1)[0]
