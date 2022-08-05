@@ -370,7 +370,7 @@ def main(
         "optimizer": optimizer,
         "scaler": scaler,
         "params": params,
-        "metric": metric
+        "metric": metric,
     }
 
     if with_scheduler:
