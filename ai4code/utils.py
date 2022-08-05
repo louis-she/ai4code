@@ -241,7 +241,6 @@ def process(file):
     return sample
 
 
-
 def print_params(params: Dict[str, str]):
     max_key_len = reduce(lambda x, y: max(x, len(y)), params.keys(), 0)
     print('----------------------------------------------------------------------------------------------')

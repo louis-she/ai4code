@@ -167,6 +167,7 @@ def main(
         freeze_layers=freeze_layers
     )
 
+    swa_model = None
     if with_swa:
         swa_model = AveragedModel(model).to(device)
 
@@ -365,7 +366,7 @@ def main(
     # checkpoint
     objects_to_checkpoint = {
         "trainer": trainer,
-        "model": model,
+        "model": swa_model if swa_model is not None else model,
         "optimizer": optimizer,
         "scaler": scaler,
         "params": params,
