@@ -6,7 +6,7 @@ The source code of Kaggle's [Google AI4Code – Understand Code in Python Notebo
 
 ## 🧪 Solution
 
-Kaggle | GitHub | 中文(知乎)
+[Kaggle](https://www.kaggle.com/competitions/AI4Code/discussion/343714) | [GitHub](https://github.com/louis-she/ai4code/blob/master/solution.md)
 
 ## 🐳 Main software/libs been used
 

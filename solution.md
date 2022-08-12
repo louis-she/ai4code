@@ -4,7 +4,7 @@
 
 Source code: https://github.com/louis-she/ai4code.git
 
-Public Inference Notebook:
+Inference Notebook: https://www.kaggle.com/code/snaker/new-rank/notebook
 
 ## TL;DR
 
