@@ -1,6 +1,6 @@
 fire
 aim
-pytorch-ignite
-transformers
+pytorch-ignite==0.4.9
+transformers==4.18.0
 nltk
 wandb
