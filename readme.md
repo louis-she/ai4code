@@ -1,4 +1,4 @@
-![banner](https://storage.googleapis.com/kaggle-competitions/kaggle/35887/logos/header.png?t=2022-05-09-22-33-02)
+![banner](./assets/header.png)
 
 # Source code of Google AI4Code competition(9th on LB, <unk&gt; on PB)
 

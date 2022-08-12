@@ -1,6 +1,10 @@
-![banner](https://storage.googleapis.com/kaggle-competitions/kaggle/35887/logos/header.png?t=2022-05-09-22-33-02)
+![banner](./assets/header.png)
 
-# Solution of Google AI4Code competition, Segment Ranking(9th on LB, <unk&gt; on PB)
+# Segment Ranking(9th on LB, <unk&gt; on PB)
+
+Source code: https://github.com/louis-she/ai4code.git
+
+Public Inference Notebook:
 
 ## TL;DR
 
@@ -26,15 +30,14 @@ Now since we have multiple segments of a notebook, and markdown cells in that no
 
 The number of cell in segments(N) here is a super important hyperparameters. A large N will speed up training and inference, small N can bring more context information. I ended up chosing N = 16 and sequence max length = 384.
 
-## Other important tricks
+## Task related tricks
 
-* Training with language modeling
+**Training with language modeling**
 
 There is actually a third head of my model, which is used as language modeling. The input for that head is <previous_cell_encode&gt; + <anchor_cell_encode&gt; + <next_cell_encode&gt;, positive means that the three is continouse, negative means not continouse, they are just randomly pick from the notebook(but not the previous and next ones).
 
-* <pad&gt; is a wast
+**<pad&gt; is a wast**
 
-I try to keep as many information as possible, and reduce <pad> tokens. Given the following markdown cell and code cells, how can we cut-off to keep a length of 384? Instead cut every cell a fixed length, I used the following method showed by the figma.
+I try to keep as many information as possible, and reduce <pad> tokens. Given the following markdown cell and code cells, how can we cut-off to keep a length of 384? Instead cut every cell a fixed length, I used the following method showed by the figma. Or have a look at the [test case](https://github.com/louis-she/ai4code/blob/master/tests/test_utils.py#L6).
 
 ![sequence-ensembling](./assets/sequence-ensembling.png)
-
